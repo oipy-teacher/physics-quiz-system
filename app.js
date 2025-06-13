@@ -83,7 +83,7 @@ function showStudentLogin() {
 }
 
 // 学生ログイン
-function studentLogin() {
+async function studentLogin() {
     const inputId = document.getElementById('studentId').value;
     const errorDiv = document.getElementById('loginError');
 
@@ -94,19 +94,31 @@ function studentLogin() {
         return;
     }
 
-    // テストが設定されているかチェック
-    if (!testEnabled || questions.length === 0) {
-        errorDiv.textContent = 'テストがまだ設定されていません。教員に確認してください。';
+    // データを再読み込み
+    errorDiv.textContent = 'テストデータを読み込み中...';
+    errorDiv.style.display = 'block';
+
+    try {
+        await loadSavedQuestions();
+        
+        // テストが設定されているかチェック
+        if (!testEnabled || questions.length === 0) {
+            errorDiv.textContent = 'テストがまだ設定されていません。教員に確認してください。';
+            errorDiv.style.display = 'block';
+            return;
+        }
+
+        studentId = inputId;
+        errorDiv.style.display = 'none';
+
+        // テスト画面に遷移
+        showScreen('test');
+        startTest();
+    } catch (error) {
+        console.error('Login error:', error);
+        errorDiv.textContent = 'テストデータの読み込みに失敗しました。ページを再読み込みしてください。';
         errorDiv.style.display = 'block';
-        return;
     }
-
-    studentId = inputId;
-    errorDiv.style.display = 'none';
-
-    // テスト画面に遷移
-    showScreen('test');
-    startTest();
 }
 
 // 管理者ログイン
@@ -461,7 +473,7 @@ function removeQuestion(index) {
 }
 
 // 問題設定保存
-function saveQuestions() {
+async function saveQuestions() {
     if (questions.length === 0) {
         showAdminError('問題が設定されていません。');
         return;
@@ -474,18 +486,79 @@ function saveQuestions() {
         return;
     }
 
-    // ローカルストレージに保存
+    // データを準備
+    const dataToSave = {
+        questions: questions,
+        answerExamples: answerExamples,
+        testEnabled: true,
+        lastUpdated: new Date().toISOString()
+    };
+
     try {
+        // ローカルストレージにも保存（バックアップ）
         localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
         localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
-        testEnabled = true;
         localStorage.setItem('physicsQuizEnabled', 'true');
+        localStorage.setItem('physicsQuizData', JSON.stringify(dataToSave));
 
-        showAdminSuccess('問題設定を保存しました。テストが受験可能になりました。');
+        testEnabled = true;
+        
+        showAdminSuccess(`問題設定を保存しました。テストが受験可能になりました。\n\n【重要】生徒がテストを受験するには、以下の手順が必要です：\n1. この設定データをGitHubにアップロードする\n2. 生徒は同じURLからアクセスする\n\n設定データをコピーして、data.jsonファイルを更新してください。`);
+        
+        // 設定データを表示
+        showDataForCopy(dataToSave);
         updateTestStatus();
     } catch (error) {
         showAdminError('保存に失敗しました。データが大きすぎる可能性があります。');
         console.error('Save error:', error);
+    }
+}
+
+// データコピー用の表示
+function showDataForCopy(data) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+    `;
+    
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 80%; max-height: 80%; overflow: auto;">
+            <h3>設定データをコピーしてください</h3>
+            <p>以下のデータをコピーして、data.jsonファイルに貼り付けてください：</p>
+            <textarea id="dataTextarea" style="width: 100%; height: 300px; font-family: monospace; font-size: 12px;" readonly>${JSON.stringify(data, null, 2)}</textarea>
+            <div style="margin-top: 20px; text-align: center;">
+                <button onclick="copyDataToClipboard()" style="background: #007aff; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin-right: 10px;">データをコピー</button>
+                <button onclick="closeDataModal()" style="background: #666; color: white; border: none; padding: 10px 20px; border-radius: 5px;">閉じる</button>
+            </div>
+        </div>
+    `;
+    
+    modal.id = 'dataModal';
+    document.body.appendChild(modal);
+}
+
+function copyDataToClipboard() {
+    const textarea = document.getElementById('dataTextarea');
+    if (textarea) {
+        textarea.select();
+        document.execCommand('copy');
+        alert('データをクリップボードにコピーしました！');
+    }
+}
+
+function closeDataModal() {
+    const modal = document.getElementById('dataModal');
+    if (modal) {
+        modal.remove();
     }
 }
 
@@ -508,7 +581,58 @@ function updateTestStatus() {
 }
 
 // 保存された問題データを読み込み
-function loadSavedQuestions() {
+async function loadSavedQuestions() {
+    try {
+        // まずサーバーからdata.jsonを読み込み
+        await loadQuestionsFromServer();
+        
+        // サーバーデータがない場合はローカルストレージから読み込み
+        if (questions.length === 0) {
+            loadQuestionsFromLocalStorage();
+        }
+        
+        updateTestStatus();
+    } catch (error) {
+        console.error('Load error:', error);
+        // エラーの場合はローカルストレージから読み込み
+        loadQuestionsFromLocalStorage();
+        updateTestStatus();
+    }
+}
+
+// サーバーからデータを読み込み
+async function loadQuestionsFromServer() {
+    try {
+        const response = await fetch('./data.json');
+        if (response.ok) {
+            const data = await response.json();
+            
+            if (data.questions && data.questions.length > 0) {
+                questions = data.questions;
+                answerExamples = data.answerExamples || [];
+                testEnabled = data.testEnabled || false;
+                
+                console.log('Questions loaded from server:', questions.length);
+                
+                // 管理画面の場合は表示を更新
+                if (document.getElementById('questionList')) {
+                    renderQuestionList();
+                }
+                if (document.getElementById('answerExampleList')) {
+                    renderAnswerExampleList();
+                }
+                
+                return true;
+            }
+        }
+    } catch (error) {
+        console.log('Server data not available, falling back to localStorage');
+    }
+    return false;
+}
+
+// ローカルストレージからデータを読み込み
+function loadQuestionsFromLocalStorage() {
     try {
         const savedQuestions = localStorage.getItem('physicsQuizQuestions');
         const savedAnswerExamples = localStorage.getItem('physicsQuizAnswerExamples');
@@ -516,22 +640,25 @@ function loadSavedQuestions() {
         
         if (savedQuestions) {
             questions = JSON.parse(savedQuestions);
-            renderQuestionList();
+            if (document.getElementById('questionList')) {
+                renderQuestionList();
+            }
         }
         
         if (savedAnswerExamples) {
             answerExamples = JSON.parse(savedAnswerExamples);
-            renderAnswerExampleList();
+            if (document.getElementById('answerExampleList')) {
+                renderAnswerExampleList();
+            }
         }
         
         if (savedEnabled === 'true') {
             testEnabled = true;
         }
         
-        updateTestStatus();
+        console.log('Questions loaded from localStorage:', questions.length);
     } catch (error) {
-        console.error('Load error:', error);
-        showAdminError('保存されたデータの読み込みに失敗しました。');
+        console.error('LocalStorage load error:', error);
     }
 }
 
@@ -1754,12 +1881,12 @@ function clearAllResults() {
 // ========== 初期化処理 ==========
 
 // ページ読み込み完了時の初期化
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('Physics Quiz System initialized');
     
     // 管理画面の初期化
     setupDragAndDrop();
-    loadSavedQuestions();
+    await loadSavedQuestions();
     updateTestStatus();
     setupViolationDetection();
     
