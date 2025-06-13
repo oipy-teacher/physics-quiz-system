@@ -576,9 +576,25 @@ function backToLogin() {
 // Canvas初期化
 function initCanvas() {
     canvas = document.getElementById('answerCanvas');
-    if (!canvas) return;
+    if (!canvas) {
+        console.error('Canvas element not found');
+        return;
+    }
     
     ctx = canvas.getContext('2d');
+    if (!ctx) {
+        console.error('Canvas context not available');
+        return;
+    }
+    
+    // 既存のイベントリスナーを削除（重複防止）
+    canvas.removeEventListener('mousedown', startDrawing);
+    canvas.removeEventListener('mousemove', draw);
+    canvas.removeEventListener('mouseup', stopDrawing);
+    canvas.removeEventListener('mouseout', stopDrawing);
+    canvas.removeEventListener('touchstart', handleTouch);
+    canvas.removeEventListener('touchmove', handleTouch);
+    canvas.removeEventListener('touchend', stopDrawing);
     
     // Canvas サイズ設定
     resizeCanvas();
@@ -591,9 +607,11 @@ function initCanvas() {
     canvas.addEventListener('mouseout', stopDrawing);
     
     // タッチイベント設定（iPad対応）
-    canvas.addEventListener('touchstart', handleTouch);
-    canvas.addEventListener('touchmove', handleTouch);
-    canvas.addEventListener('touchend', stopDrawing);
+    canvas.addEventListener('touchstart', handleTouch, { passive: false });
+    canvas.addEventListener('touchmove', handleTouch, { passive: false });
+    canvas.addEventListener('touchend', stopDrawing, { passive: false });
+    
+    console.log('Canvas initialized successfully');
 }
 
 function resizeCanvas() {
@@ -612,10 +630,17 @@ function resizeCanvas() {
 
 function handleTouch(e) {
     e.preventDefault();
+    e.stopPropagation();
+    
+    if (!e.touches || e.touches.length === 0) return;
+    
     const touch = e.touches[0];
     const rect = canvas.getBoundingClientRect();
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const x = (touch.clientX - rect.left) * scaleX;
+    const y = (touch.clientY - rect.top) * scaleY;
     
     if (e.type === 'touchstart') {
         startDrawing({offsetX: x, offsetY: y});
@@ -705,6 +730,12 @@ function startTest() {
     if (violationCountElement) {
         violationCountElement.textContent = '0';
     }
+    
+    // キャンバス初期化
+    setTimeout(() => {
+        initCanvas();
+        setInputMethod('canvas'); // デフォルトで手書き入力を選択
+    }, 100);
     
     // タイマー開始
     timerInterval = setInterval(updateTimer, 1000);
@@ -1719,3 +1750,40 @@ function clearAllResults() {
         }
     }
 }
+
+// ========== 初期化処理 ==========
+
+// ページ読み込み完了時の初期化
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Physics Quiz System initialized');
+    
+    // 管理画面の初期化
+    setupDragAndDrop();
+    loadSavedQuestions();
+    updateTestStatus();
+    setupViolationDetection();
+    
+    // キャンバス初期化（テスト画面表示時に実行）
+    const testScreen = document.getElementById('testScreen');
+    if (testScreen) {
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                    const target = mutation.target;
+                    if (target.id === 'testScreen' && target.style.display !== 'none') {
+                        // テスト画面が表示されたときにキャンバスを初期化
+                        setTimeout(initCanvas, 100);
+                    }
+                }
+            });
+        });
+        
+        observer.observe(testScreen, {
+            attributes: true,
+            attributeFilter: ['style']
+        });
+    }
+    
+    // 初期画面設定
+    showScreen('login');
+});
