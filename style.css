@@ -951,3 +951,21 @@ input[type="file"] {
         gap: 10px;
     }
 }
+
+/* テストコードボタン */
+.test-code-button {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s;
+    width: auto;
+    margin: 0;
+}
+
+.test-code-button:hover {
+    background-color: #218838;
+}

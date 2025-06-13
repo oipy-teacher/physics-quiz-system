@@ -78,8 +78,72 @@ function showAdminLogin() {
 
 function showStudentLogin() {
     document.getElementById('adminLoginDiv').style.display = 'none';
+    document.getElementById('testCodeLoginDiv').style.display = 'none';
     document.getElementById('studentLoginDiv').style.display = 'block';
     document.getElementById('studentId').focus();
+}
+
+function showTestCodeLogin() {
+    document.getElementById('studentLoginDiv').style.display = 'none';
+    document.getElementById('testCodeLoginDiv').style.display = 'block';
+    document.getElementById('adminLoginDiv').style.display = 'none';
+    document.getElementById('testCodeInput').focus();
+}
+
+async function testCodeLogin() {
+    const testCode = document.getElementById('testCodeInput').value.trim().toUpperCase();
+    const studentIdInput = document.getElementById('studentIdForCode').value.trim();
+    const errorDiv = document.getElementById('loginError');
+
+    // バリデーション
+    if (!/^[A-Z0-9]{6}$/.test(testCode)) {
+        errorDiv.textContent = 'テストコードは6桁の英数字で入力してください';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    if (!/^\d{4}$/.test(studentIdInput)) {
+        errorDiv.textContent = '学籍番号は4桁の数字で入力してください';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    // テストコードからデータを読み込み
+    errorDiv.textContent = 'テストデータを読み込み中...';
+    errorDiv.style.display = 'block';
+
+    try {
+        const testKey = `testCode_${testCode}`;
+        const testData = localStorage.getItem(testKey);
+        
+        if (!testData) {
+            errorDiv.textContent = 'テストコードが見つかりません。正しいコードを入力してください。';
+            errorDiv.style.display = 'block';
+            return;
+        }
+
+        const data = JSON.parse(testData);
+        
+        if (!data.questions || data.questions.length === 0) {
+            errorDiv.textContent = 'テストデータが無効です。教員に確認してください。';
+            errorDiv.style.display = 'block';
+            return;
+        }
+
+        // データを設定
+        questions = data.questions;
+        answerExamples = data.answerExamples || [];
+        testEnabled = data.testEnabled || false;
+        studentId = studentIdInput;
+
+        errorDiv.style.display = 'none';
+        showScreen('test');
+        startTest();
+    } catch (error) {
+        console.error('Test code login error:', error);
+        errorDiv.textContent = 'テストデータの読み込みに失敗しました。';
+        errorDiv.style.display = 'block';
+    }
 }
 
 // 学生ログイン
@@ -509,7 +573,7 @@ async function saveQuestions() {
         const shareUrl = generateShareUrl(dataToSave);
         
         showAdminSuccess('問題設定を保存しました。テストが受験可能になりました。');
-        showShareUrl(shareUrl);
+        showShareOptions(dataToSave);
         updateTestStatus();
     } catch (error) {
         showAdminError('保存に失敗しました。データが大きすぎる可能性があります。');
@@ -520,19 +584,33 @@ async function saveQuestions() {
 // 共有URL生成
 function generateShareUrl(data) {
     try {
-        // データを圧縮してBase64エンコード
-        const jsonString = JSON.stringify(data);
-        const compressed = btoa(encodeURIComponent(jsonString));
+        // 短いIDを生成してローカルストレージに保存
+        const shareId = generateShortId();
+        const shareKey = `physicsQuizShare_${shareId}`;
+        
+        // 共有データを保存
+        localStorage.setItem(shareKey, JSON.stringify(data));
+        
         const baseUrl = window.location.origin + window.location.pathname;
-        return `${baseUrl}?data=${compressed}`;
+        return `${baseUrl}?id=${shareId}`;
     } catch (error) {
         console.error('URL generation error:', error);
         return window.location.href;
     }
 }
 
-// 共有URL表示
-function showShareUrl(shareUrl) {
+// 短いID生成
+function generateShortId() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
+// 共有オプション表示
+function showShareOptions(data) {
     const modal = document.createElement('div');
     modal.style.cssText = `
         position: fixed;
@@ -547,47 +625,108 @@ function showShareUrl(shareUrl) {
         z-index: 2000;
     `;
     
+    // テストコードを生成（6桁の英数字）
+    const testCode = generateShortId();
+    
+    // データをローカルストレージに保存
+    localStorage.setItem(`testCode_${testCode}`, JSON.stringify(data));
+    
     modal.innerHTML = `
-        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 90%; max-height: 80%; overflow: auto;">
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 90%; max-height: 80%; overflow: auto; text-align: center;">
             <h3>🎉 テスト設定完了！</h3>
-            <p><strong>生徒はこのURLでテストを受験できます：</strong></p>
-            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0; word-break: break-all; font-family: monospace; font-size: 14px;">
-                ${shareUrl}
+            
+            <div style="margin: 30px 0;">
+                <h4>📱 生徒への共有方法</h4>
+                <div style="display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;">
+                    
+                    <!-- テストコード方式 -->
+                    <div style="border: 2px solid #007aff; border-radius: 15px; padding: 20px; min-width: 250px;">
+                        <h5 style="color: #007aff; margin-top: 0;">🔢 テストコード</h5>
+                        <div style="background: #f0f8ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                            <div style="font-size: 24px; font-weight: bold; color: #007aff; letter-spacing: 3px;">${testCode}</div>
+                        </div>
+                        <button onclick="copyTestCode('${testCode}')" style="background: #007aff; color: white; border: none; padding: 10px 20px; border-radius: 8px; width: 100%;">コードをコピー</button>
+                        <div style="font-size: 12px; color: #666; margin-top: 10px;">
+                            生徒は同じURLにアクセスして<br>このコードを入力
+                        </div>
+                    </div>
+                    
+                    <!-- QRコード方式 -->
+                    <div style="border: 2px solid #28a745; border-radius: 15px; padding: 20px; min-width: 250px;">
+                        <h5 style="color: #28a745; margin-top: 0;">📱 QRコード</h5>
+                        <div id="qrcode" style="margin: 15px 0; display: flex; justify-content: center;"></div>
+                        <button onclick="downloadQR()" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 8px; width: 100%;">QRコードを保存</button>
+                        <div style="font-size: 12px; color: #666; margin-top: 10px;">
+                            生徒はQRコードをスキャン
+                        </div>
+                    </div>
+                    
+                </div>
             </div>
-            <div style="margin-top: 20px; text-align: center;">
-                <button onclick="copyShareUrl('${shareUrl}')" style="background: #007aff; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin-right: 10px; font-size: 16px;">📋 URLをコピー</button>
+            
+            <div style="margin-top: 30px; padding: 15px; background: #e8f4fd; border-radius: 8px; font-size: 14px; text-align: left;">
+                <strong>📋 使い方：</strong><br>
+                <strong>方法1（テストコード）：</strong><br>
+                1. 上のテストコードを生徒に伝える<br>
+                2. 生徒は同じURL（${window.location.origin + window.location.pathname}）にアクセス<br>
+                3. 「テストコードでログイン」を選択してコードを入力<br><br>
+                
+                <strong>方法2（QRコード）：</strong><br>
+                1. QRコードを保存して生徒に共有<br>
+                2. 生徒はスマホでQRコードをスキャン<br>
+                3. 自動的にテストページが開く
+            </div>
+            
+            <div style="margin-top: 20px;">
                 <button onclick="closeShareModal()" style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px;">閉じる</button>
-            </div>
-            <div style="margin-top: 20px; padding: 15px; background: #e8f4fd; border-radius: 8px; font-size: 14px;">
-                <strong>📱 使い方：</strong><br>
-                1. 上のURLをコピーして生徒に共有<br>
-                2. 生徒はそのURLにアクセス<br>
-                3. 学籍番号でログインしてテスト開始<br>
-                <br>
-                <strong>💡 ポイント：</strong><br>
-                • URLに問題データが含まれているので、GitHubの更新は不要です<br>
-                • 生徒は任意の端末からアクセス可能です
             </div>
         </div>
     `;
     
     modal.id = 'shareModal';
     document.body.appendChild(modal);
+    
+    // QRコードを生成
+    generateQRCode(testCode);
 }
 
-function copyShareUrl(url) {
-    navigator.clipboard.writeText(url).then(() => {
-        alert('URLをクリップボードにコピーしました！\n生徒にこのURLを共有してください。');
+function copyTestCode(code) {
+    navigator.clipboard.writeText(code).then(() => {
+        alert(`テストコード「${code}」をクリップボードにコピーしました！\n生徒にこのコードを伝えてください。`);
     }).catch(() => {
         // フォールバック
         const textarea = document.createElement('textarea');
-        textarea.value = url;
+        textarea.value = code;
         document.body.appendChild(textarea);
         textarea.select();
         document.execCommand('copy');
         document.body.removeChild(textarea);
-        alert('URLをクリップボードにコピーしました！\n生徒にこのURLを共有してください。');
+        alert(`テストコード「${code}」をクリップボードにコピーしました！\n生徒にこのコードを伝えてください。`);
     });
+}
+
+// QRコード生成
+function generateQRCode(testCode) {
+    const qrContainer = document.getElementById('qrcode');
+    if (!qrContainer) return;
+    
+    const url = `${window.location.origin + window.location.pathname}?code=${testCode}`;
+    
+    // シンプルなQRコード生成（Google Charts API使用）
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`;
+    
+    qrContainer.innerHTML = `<img src="${qrUrl}" alt="QRコード" style="border: 1px solid #ddd; border-radius: 8px;">`;
+}
+
+// QRコードダウンロード
+function downloadQR() {
+    const qrImg = document.querySelector('#qrcode img');
+    if (qrImg) {
+        const link = document.createElement('a');
+        link.href = qrImg.src;
+        link.download = 'physics-test-qr.png';
+        link.click();
+    }
 }
 
 function closeShareModal() {
@@ -646,35 +785,53 @@ async function loadSavedQuestions() {
 function loadQuestionsFromUrl() {
     try {
         const urlParams = new URLSearchParams(window.location.search);
-        const dataParam = urlParams.get('data');
+        const testCode = urlParams.get('code');
+        const shareId = urlParams.get('id');
+        const dataParam = urlParams.get('data'); // 旧形式との互換性
         
-        if (dataParam) {
-            // Base64デコードしてJSONパース
-            const decodedData = decodeURIComponent(atob(dataParam));
-            const data = JSON.parse(decodedData);
-            
-            if (data.questions && data.questions.length > 0) {
-                questions = data.questions;
-                answerExamples = data.answerExamples || [];
-                testEnabled = data.testEnabled || false;
-                
-                console.log('Questions loaded from URL:', questions.length);
-                
-                // 管理画面の場合は表示を更新
-                if (document.getElementById('questionList')) {
-                    renderQuestionList();
-                }
-                if (document.getElementById('answerExampleList')) {
-                    renderAnswerExampleList();
-                }
-                
-                // URLからロードした場合は、ローカルストレージにも保存
-                localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
-                localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
-                localStorage.setItem('physicsQuizEnabled', testEnabled.toString());
-                
-                return true;
+        let data = null;
+        
+        if (testCode) {
+            // 新形式：テストコード
+            const testKey = `testCode_${testCode}`;
+            const testData = localStorage.getItem(testKey);
+            if (testData) {
+                data = JSON.parse(testData);
             }
+        } else if (shareId) {
+            // 中間形式：短縮ID
+            const shareKey = `physicsQuizShare_${shareId}`;
+            const shareData = localStorage.getItem(shareKey);
+            if (shareData) {
+                data = JSON.parse(shareData);
+            }
+        } else if (dataParam) {
+            // 旧形式：長いURL（互換性のため）
+            const decodedData = decodeURIComponent(atob(dataParam));
+            data = JSON.parse(decodedData);
+        }
+        
+        if (data && data.questions && data.questions.length > 0) {
+            questions = data.questions;
+            answerExamples = data.answerExamples || [];
+            testEnabled = data.testEnabled || false;
+            
+            console.log('Questions loaded from URL:', questions.length);
+            
+            // 管理画面の場合は表示を更新
+            if (document.getElementById('questionList')) {
+                renderQuestionList();
+            }
+            if (document.getElementById('answerExampleList')) {
+                renderAnswerExampleList();
+            }
+            
+            // URLからロードした場合は、ローカルストレージにも保存
+            localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
+            localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
+            localStorage.setItem('physicsQuizEnabled', testEnabled.toString());
+            
+            return true;
         }
     } catch (error) {
         console.log('URL data not available or invalid:', error);

@@ -11,10 +11,27 @@
     <div id="loginScreen">
         <div class="login-container">
             <h1>物理小テスト</h1>
+            
+            <!-- 学籍番号ログイン -->
             <div id="studentLoginDiv">
                 <input type="text" id="studentId" placeholder="学籍番号（4桁）" maxlength="4" pattern="[0-9]{4}">
                 <button id="loginButton" onclick="studentLogin()">テスト開始</button>
             </div>
+            
+            <!-- テストコードログイン -->
+            <div style="margin: 20px 0; text-align: center;">
+                <button class="test-code-button" onclick="showTestCodeLogin()">📱 テストコードでログイン</button>
+            </div>
+            
+            <div id="testCodeLoginDiv" style="display: none;">
+                <input type="text" id="testCodeInput" placeholder="テストコード（6桁）" maxlength="6" style="text-transform: uppercase;">
+                <div style="margin: 10px 0;">
+                    <input type="text" id="studentIdForCode" placeholder="学籍番号（4桁）" maxlength="4" pattern="[0-9]{4}">
+                </div>
+                <button onclick="testCodeLogin()">テスト開始</button>
+                <button onclick="showStudentLogin()" style="background-color: #666; margin-left: 10px;">戻る</button>
+            </div>
+            
             <button class="admin-login-button" onclick="showAdminLogin()">教員用ログイン</button>
             <div id="adminLoginDiv" style="display: none;">
                 <input type="password" id="adminPassword" placeholder="管理者パスワード">
