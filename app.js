@@ -491,22 +491,25 @@ async function saveQuestions() {
         questions: questions,
         answerExamples: answerExamples,
         testEnabled: true,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        teacherId: Date.now() // 教員セッションID
     };
 
     try {
-        // ローカルストレージにも保存（バックアップ）
+        // ローカルストレージに保存
         localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
         localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
         localStorage.setItem('physicsQuizEnabled', 'true');
         localStorage.setItem('physicsQuizData', JSON.stringify(dataToSave));
+        localStorage.setItem('physicsQuizTeacherId', dataToSave.teacherId.toString());
 
         testEnabled = true;
         
-        showAdminSuccess(`問題設定を保存しました。テストが受験可能になりました。\n\n【重要】生徒がテストを受験するには、以下の手順が必要です：\n1. この設定データをGitHubにアップロードする\n2. 生徒は同じURLからアクセスする\n\n設定データをコピーして、data.jsonファイルを更新してください。`);
+        // 共有URLを生成
+        const shareUrl = generateShareUrl(dataToSave);
         
-        // 設定データを表示
-        showDataForCopy(dataToSave);
+        showAdminSuccess('問題設定を保存しました。テストが受験可能になりました。');
+        showShareUrl(shareUrl);
         updateTestStatus();
     } catch (error) {
         showAdminError('保存に失敗しました。データが大きすぎる可能性があります。');
@@ -514,8 +517,22 @@ async function saveQuestions() {
     }
 }
 
-// データコピー用の表示
-function showDataForCopy(data) {
+// 共有URL生成
+function generateShareUrl(data) {
+    try {
+        // データを圧縮してBase64エンコード
+        const jsonString = JSON.stringify(data);
+        const compressed = btoa(encodeURIComponent(jsonString));
+        const baseUrl = window.location.origin + window.location.pathname;
+        return `${baseUrl}?data=${compressed}`;
+    } catch (error) {
+        console.error('URL generation error:', error);
+        return window.location.href;
+    }
+}
+
+// 共有URL表示
+function showShareUrl(shareUrl) {
     const modal = document.createElement('div');
     modal.style.cssText = `
         position: fixed;
@@ -531,36 +548,56 @@ function showDataForCopy(data) {
     `;
     
     modal.innerHTML = `
-        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 80%; max-height: 80%; overflow: auto;">
-            <h3>設定データをコピーしてください</h3>
-            <p>以下のデータをコピーして、data.jsonファイルに貼り付けてください：</p>
-            <textarea id="dataTextarea" style="width: 100%; height: 300px; font-family: monospace; font-size: 12px;" readonly>${JSON.stringify(data, null, 2)}</textarea>
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 90%; max-height: 80%; overflow: auto;">
+            <h3>🎉 テスト設定完了！</h3>
+            <p><strong>生徒はこのURLでテストを受験できます：</strong></p>
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0; word-break: break-all; font-family: monospace; font-size: 14px;">
+                ${shareUrl}
+            </div>
             <div style="margin-top: 20px; text-align: center;">
-                <button onclick="copyDataToClipboard()" style="background: #007aff; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin-right: 10px;">データをコピー</button>
-                <button onclick="closeDataModal()" style="background: #666; color: white; border: none; padding: 10px 20px; border-radius: 5px;">閉じる</button>
+                <button onclick="copyShareUrl('${shareUrl}')" style="background: #007aff; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin-right: 10px; font-size: 16px;">📋 URLをコピー</button>
+                <button onclick="closeShareModal()" style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px;">閉じる</button>
+            </div>
+            <div style="margin-top: 20px; padding: 15px; background: #e8f4fd; border-radius: 8px; font-size: 14px;">
+                <strong>📱 使い方：</strong><br>
+                1. 上のURLをコピーして生徒に共有<br>
+                2. 生徒はそのURLにアクセス<br>
+                3. 学籍番号でログインしてテスト開始<br>
+                <br>
+                <strong>💡 ポイント：</strong><br>
+                • URLに問題データが含まれているので、GitHubの更新は不要です<br>
+                • 生徒は任意の端末からアクセス可能です
             </div>
         </div>
     `;
     
-    modal.id = 'dataModal';
+    modal.id = 'shareModal';
     document.body.appendChild(modal);
 }
 
-function copyDataToClipboard() {
-    const textarea = document.getElementById('dataTextarea');
-    if (textarea) {
+function copyShareUrl(url) {
+    navigator.clipboard.writeText(url).then(() => {
+        alert('URLをクリップボードにコピーしました！\n生徒にこのURLを共有してください。');
+    }).catch(() => {
+        // フォールバック
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        document.body.appendChild(textarea);
         textarea.select();
         document.execCommand('copy');
-        alert('データをクリップボードにコピーしました！');
-    }
+        document.body.removeChild(textarea);
+        alert('URLをクリップボードにコピーしました！\n生徒にこのURLを共有してください。');
+    });
 }
 
-function closeDataModal() {
-    const modal = document.getElementById('dataModal');
+function closeShareModal() {
+    const modal = document.getElementById('shareModal');
     if (modal) {
         modal.remove();
     }
 }
+
+
 
 // テスト状態更新
 function updateTestStatus() {
@@ -583,12 +620,17 @@ function updateTestStatus() {
 // 保存された問題データを読み込み
 async function loadSavedQuestions() {
     try {
-        // まずサーバーからdata.jsonを読み込み
-        await loadQuestionsFromServer();
+        // まずURLパラメータからデータを読み込み
+        const urlLoaded = loadQuestionsFromUrl();
         
-        // サーバーデータがない場合はローカルストレージから読み込み
-        if (questions.length === 0) {
-            loadQuestionsFromLocalStorage();
+        if (!urlLoaded) {
+            // URLデータがない場合はサーバーから読み込み
+            await loadQuestionsFromServer();
+            
+            // サーバーデータもない場合はローカルストレージから読み込み
+            if (questions.length === 0) {
+                loadQuestionsFromLocalStorage();
+            }
         }
         
         updateTestStatus();
@@ -598,6 +640,46 @@ async function loadSavedQuestions() {
         loadQuestionsFromLocalStorage();
         updateTestStatus();
     }
+}
+
+// URLパラメータからデータを読み込み
+function loadQuestionsFromUrl() {
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const dataParam = urlParams.get('data');
+        
+        if (dataParam) {
+            // Base64デコードしてJSONパース
+            const decodedData = decodeURIComponent(atob(dataParam));
+            const data = JSON.parse(decodedData);
+            
+            if (data.questions && data.questions.length > 0) {
+                questions = data.questions;
+                answerExamples = data.answerExamples || [];
+                testEnabled = data.testEnabled || false;
+                
+                console.log('Questions loaded from URL:', questions.length);
+                
+                // 管理画面の場合は表示を更新
+                if (document.getElementById('questionList')) {
+                    renderQuestionList();
+                }
+                if (document.getElementById('answerExampleList')) {
+                    renderAnswerExampleList();
+                }
+                
+                // URLからロードした場合は、ローカルストレージにも保存
+                localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
+                localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
+                localStorage.setItem('physicsQuizEnabled', testEnabled.toString());
+                
+                return true;
+            }
+        }
+    } catch (error) {
+        console.log('URL data not available or invalid:', error);
+    }
+    return false;
 }
 
 // サーバーからデータを読み込み
