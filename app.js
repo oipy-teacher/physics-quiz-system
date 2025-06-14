@@ -622,13 +622,8 @@ async function saveQuestions() {
         
         showAdminSuccess('問題設定を保存しました。テストが受験可能になりました。');
         
-        // 共有URLを生成（非同期）
-        generateShareUrl(dataToSave).then(shareResult => {
-            showShareOptions(dataToSave, shareResult);
-        }).catch(error => {
-            console.error('Share generation error:', error);
-            showShareOptions(dataToSave, { testCode: generateShortId(), gistId: null });
-        });
+        // 既存のテストコードがあるかチェック
+        checkExistingTestCode(dataToSave);
         
         updateTestStatus();
     } catch (error) {
@@ -693,6 +688,191 @@ function generateShortId() {
         result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return result;
+}
+
+// 既存のテストコードをチェック
+function checkExistingTestCode(dataToSave) {
+    // ローカルストレージから既存のテストコードを検索
+    const existingCodes = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('testCode_')) {
+            const testCode = key.replace('testCode_', '');
+            const data = localStorage.getItem(key);
+            if (data) {
+                try {
+                    const parsedData = JSON.parse(data);
+                    // 有効なテストデータかチェック
+                    if (parsedData.questions || parsedData.gistId) {
+                        existingCodes.push({
+                            testCode: testCode,
+                            data: parsedData,
+                            hasGist: !!parsedData.gistId
+                        });
+                    }
+                } catch (e) {
+                    console.error('Invalid test code data:', key);
+                }
+            }
+        }
+    }
+    
+    if (existingCodes.length > 0) {
+        // 既存のコードがある場合は選択肢を表示
+        showTestCodeOptions(dataToSave, existingCodes);
+    } else {
+        // 既存のコードがない場合は新規作成
+        generateShareUrl(dataToSave).then(shareResult => {
+            showShareOptions(dataToSave, shareResult);
+        }).catch(error => {
+            console.error('Share generation error:', error);
+            showShareOptions(dataToSave, { testCode: generateShortId(), gistId: null });
+        });
+    }
+}
+
+// テストコード選択肢を表示
+function showTestCodeOptions(dataToSave, existingCodes) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+    `;
+    
+    const existingCodesHtml = existingCodes.map(code => `
+        <div style="border: 2px solid #007aff; border-radius: 10px; padding: 15px; margin: 10px 0; cursor: pointer; transition: background-color 0.3s;" 
+             onclick="useExistingTestCode('${code.testCode}', ${JSON.stringify(dataToSave).replace(/"/g, '&quot;')})">
+            <div style="font-size: 20px; font-weight: bold; color: #007aff;">${code.testCode}</div>
+            <div style="font-size: 12px; color: #666;">
+                ${code.hasGist ? '☁️ クラウド保存済み' : '💾 ローカル保存のみ'}
+            </div>
+        </div>
+    `).join('');
+    
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 500px; max-height: 80%; overflow: auto; text-align: center;">
+            <h3>🔢 テストコード管理</h3>
+            <p>既存のテストコードが見つかりました。どちらを使用しますか？</p>
+            
+            <div style="margin: 20px 0;">
+                <h4>既存のテストコード：</h4>
+                ${existingCodesHtml}
+            </div>
+            
+            <div style="margin-top: 30px;">
+                <button onclick="createNewTestCode(${JSON.stringify(dataToSave).replace(/"/g, '&quot;')})" 
+                        style="background: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer;">
+                    🆕 新しいコードを作成
+                </button>
+                <button onclick="closeTestCodeModal()" 
+                        style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer;">
+                    キャンセル
+                </button>
+            </div>
+        </div>
+    `;
+    
+    modal.id = 'testCodeModal';
+    document.body.appendChild(modal);
+}
+
+// 既存のテストコードを使用
+function useExistingTestCode(testCode, dataToSave) {
+    closeTestCodeModal();
+    
+    // 既存のコードのデータを更新
+    const testKey = `testCode_${testCode}`;
+    const existingData = localStorage.getItem(testKey);
+    
+    if (existingData) {
+        try {
+            const parsedData = JSON.parse(existingData);
+            
+            if (parsedData.gistId) {
+                // Gistがある場合は更新
+                updateGistData(parsedData.gistId, dataToSave, testCode);
+            } else {
+                // ローカルのみの場合はローカル更新
+                localStorage.setItem(testKey, JSON.stringify(dataToSave));
+                showShareOptions(dataToSave, { testCode: testCode, gistId: null });
+            }
+        } catch (error) {
+            console.error('Error using existing test code:', error);
+            // エラーの場合は新規作成
+            createNewTestCode(dataToSave);
+        }
+    } else {
+        // データが見つからない場合は新規作成
+        createNewTestCode(dataToSave);
+    }
+}
+
+// 新しいテストコードを作成
+function createNewTestCode(dataToSave) {
+    closeTestCodeModal();
+    
+    generateShareUrl(dataToSave).then(shareResult => {
+        showShareOptions(dataToSave, shareResult);
+    }).catch(error => {
+        console.error('Share generation error:', error);
+        showShareOptions(dataToSave, { testCode: generateShortId(), gistId: null });
+    });
+}
+
+// Gistデータを更新
+async function updateGistData(gistId, dataToSave, testCode) {
+    try {
+        const updateData = {
+            files: {
+                [`test_${testCode}.json`]: {
+                    content: JSON.stringify(dataToSave, null, 2)
+                }
+            }
+        };
+
+        const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updateData)
+        });
+
+        if (response.ok) {
+            // ローカルデータも更新
+            localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
+                gistId: gistId,
+                testCode: testCode,
+                created: new Date().toISOString(),
+                ...dataToSave
+            }));
+            
+            showShareOptions(dataToSave, { testCode: testCode, gistId: gistId });
+        } else {
+            throw new Error('Gist update failed');
+        }
+    } catch (error) {
+        console.error('Gist update error:', error);
+        // フォールバック：ローカル更新のみ
+        localStorage.setItem(`testCode_${testCode}`, JSON.stringify(dataToSave));
+        showShareOptions(dataToSave, { testCode: testCode, gistId: null });
+    }
+}
+
+// テストコードモーダルを閉じる
+function closeTestCodeModal() {
+    const modal = document.getElementById('testCodeModal');
+    if (modal) {
+        modal.remove();
+    }
 }
 
 // 共有オプション表示
@@ -837,10 +1017,90 @@ function updateTestStatus() {
         statusBadge.textContent = '受験可能';
         statusBadge.className = 'status-badge status-active';
         statusMessage.textContent = `${questions.length}問のテストが設定されています`;
+        
+        // 既存のテストコードを表示
+        showExistingTestCodes();
     } else {
         statusBadge.textContent = '未設定';
         statusBadge.className = 'status-badge status-inactive';
         statusMessage.textContent = '問題が設定されていません';
+        
+        // テストコード表示をクリア
+        const testCodeDisplay = document.getElementById('testCodeDisplay');
+        if (testCodeDisplay) {
+            testCodeDisplay.style.display = 'none';
+        }
+    }
+}
+
+// 既存のテストコードを表示
+function showExistingTestCodes() {
+    // 既存の表示エリアを取得または作成
+    let testCodeDisplay = document.getElementById('testCodeDisplay');
+    if (!testCodeDisplay) {
+        testCodeDisplay = document.createElement('div');
+        testCodeDisplay.id = 'testCodeDisplay';
+        testCodeDisplay.style.cssText = `
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
+        `;
+        
+        const testStatusSection = document.querySelector('.test-status').parentElement;
+        testStatusSection.appendChild(testCodeDisplay);
+    }
+    
+    // 既存のテストコードを検索
+    const existingCodes = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('testCode_')) {
+            const testCode = key.replace('testCode_', '');
+            const data = localStorage.getItem(key);
+            if (data) {
+                try {
+                    const parsedData = JSON.parse(data);
+                    if (parsedData.questions || parsedData.gistId) {
+                        existingCodes.push({
+                            testCode: testCode,
+                            hasGist: !!parsedData.gistId,
+                            created: parsedData.created || '不明'
+                        });
+                    }
+                } catch (e) {
+                    // 無効なデータは無視
+                }
+            }
+        }
+    }
+    
+    if (existingCodes.length > 0) {
+        const codesHtml = existingCodes.map(code => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; margin: 5px 0; background: white; border-radius: 8px; border: 1px solid #dee2e6;">
+                <div>
+                    <span style="font-size: 18px; font-weight: bold; color: #007aff;">${code.testCode}</span>
+                    <span style="margin-left: 10px; font-size: 12px; color: #666;">
+                        ${code.hasGist ? '☁️ クラウド' : '💾 ローカル'}
+                    </span>
+                </div>
+                <button onclick="copyTestCode('${code.testCode}')" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;">
+                    コピー
+                </button>
+            </div>
+        `).join('');
+        
+        testCodeDisplay.innerHTML = `
+            <h4 style="margin: 0 0 15px 0; color: #333;">📱 利用可能なテストコード</h4>
+            ${codesHtml}
+            <div style="margin-top: 15px; font-size: 12px; color: #666;">
+                💡 生徒はこれらのコードを使ってテストにアクセスできます
+            </div>
+        `;
+        testCodeDisplay.style.display = 'block';
+    } else {
+        testCodeDisplay.style.display = 'none';
     }
 }
 
