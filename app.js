@@ -122,21 +122,25 @@ async function testCodeLogin() {
         if (localData) {
             const parsedLocal = JSON.parse(localData);
             
-            // Gist IDがある場合はクラウドから最新データを取得
-            if (parsedLocal.gistId) {
+            // クラウド保存がある場合はクラウドから最新データを取得
+            if (parsedLocal.cloudSaved && parsedLocal.binId) {
                 try {
                     errorDiv.textContent = 'クラウドからテストデータを取得中...';
-                    const gistResponse = await fetch(`https://api.github.com/gists/${parsedLocal.gistId}`);
-                    if (gistResponse.ok) {
-                        const gist = await gistResponse.json();
-                        const fileName = Object.keys(gist.files)[0];
-                        data = JSON.parse(gist.files[fileName].content);
-                        console.log('Data loaded from cloud:', data);
+                    const cloudResponse = await fetch(`https://api.jsonbin.io/v3/b/${parsedLocal.binId}/latest`);
+                    if (cloudResponse.ok) {
+                        const result = await cloudResponse.json();
+                        const cloudData = result.record;
+                        if (cloudData && cloudData.questions) {
+                            data = cloudData;
+                            console.log('Data loaded from cloud:', data);
+                        } else {
+                            throw new Error('Invalid cloud data');
+                        }
                     } else {
-                        throw new Error('Gist not accessible');
+                        throw new Error('Cloud data not accessible');
                     }
-                } catch (gistError) {
-                    console.error('Cloud fetch error:', gistError);
+                } catch (cloudError) {
+                    console.error('Cloud fetch error:', cloudError);
                     // フォールバック：ローカルデータを使用
                     if (parsedLocal.questions) {
                         data = parsedLocal;
@@ -151,26 +155,9 @@ async function testCodeLogin() {
             }
         }
         
-        // データが見つからない場合はGist検索を試行
+        // データが見つからない場合は、まず教員にテスト作成を促す
         if (!data) {
-            errorDiv.textContent = 'テストコードを検索中...';
-            try {
-                // パブリックGistを検索
-                const searchResponse = await fetch(`https://api.github.com/search/code?q=test_${testCode}.json+in:file`);
-                if (searchResponse.ok) {
-                    const searchResult = await searchResponse.json();
-                    if (searchResult.items && searchResult.items.length > 0) {
-                        const gistUrl = searchResult.items[0].url.replace('/contents/', '/').replace('api.github.com/repos', 'gist.github.com');
-                        // Gist URLからデータを取得
-                        // この部分は複雑になるので、シンプルなエラーメッセージに変更
-                        throw new Error('Advanced search not implemented');
-                    }
-                }
-            } catch (searchError) {
-                console.error('Search error:', searchError);
-            }
-            
-            errorDiv.textContent = 'テストコードが見つかりません。正しいコードを入力してください。';
+            errorDiv.textContent = 'テストコードが見つかりません。教員がテストを作成してからアクセスしてください。';
             errorDiv.style.display = 'block';
             return;
         }
@@ -637,46 +624,42 @@ async function generateShareUrl(data) {
     try {
         const testCode = generateShortId();
         
-        // GitHub Gistにパブリックでデータを保存
-        const gistData = {
-            description: `Physics Quiz Test Code: ${testCode}`,
-            public: true,
-            files: {
-                [`test_${testCode}.json`]: {
-                    content: JSON.stringify(data, null, 2)
-                }
-            }
-        };
-
-        const response = await fetch('https://api.github.com/gists', {
+        // JSONBinにデータを保存（無料・認証不要）
+        const response = await fetch('https://api.jsonbin.io/v3/b', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-Bin-Name': `physics-test-${testCode}`
             },
-            body: JSON.stringify(gistData)
+            body: JSON.stringify({
+                ...data,
+                created: new Date().toISOString(),
+                testCode: testCode
+            })
         });
 
         if (response.ok) {
-            const gist = await response.json();
-            const gistId = gist.id;
+            const result = await response.json();
+            const binId = result.metadata.id;
             
-            // テストコードとGist IDの関連付けをローカルに保存
+            // テストコードとクラウド保存の関連付けをローカルに保存
             localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
-                gistId: gistId,
+                cloudSaved: true,
+                binId: binId,
                 testCode: testCode,
                 created: new Date().toISOString()
             }));
             
-            return { testCode, gistId };
+            return { testCode, cloudSaved: true, binId: binId };
         } else {
-            throw new Error('Gist creation failed');
+            throw new Error('Cloud save failed');
         }
     } catch (error) {
         console.error('Share URL generation error:', error);
         // フォールバック：ローカルストレージのみ
         const testCode = generateShortId();
         localStorage.setItem(`testCode_${testCode}`, JSON.stringify(data));
-        return { testCode, gistId: null };
+        return { testCode, cloudSaved: false };
     }
 }
 
@@ -703,11 +686,11 @@ function checkExistingTestCode(dataToSave) {
                 try {
                     const parsedData = JSON.parse(data);
                     // 有効なテストデータかチェック
-                    if (parsedData.questions || parsedData.gistId) {
+                    if (parsedData.questions || parsedData.cloudSaved) {
                         existingCodes.push({
                             testCode: testCode,
                             data: parsedData,
-                            hasGist: !!parsedData.gistId
+                            hasCloud: !!parsedData.cloudSaved
                         });
                     }
                 } catch (e) {
@@ -720,15 +703,15 @@ function checkExistingTestCode(dataToSave) {
     if (existingCodes.length > 0) {
         // 既存のコードがある場合は選択肢を表示
         showTestCodeOptions(dataToSave, existingCodes);
-    } else {
-        // 既存のコードがない場合は新規作成
-        generateShareUrl(dataToSave).then(shareResult => {
-            showShareOptions(dataToSave, shareResult);
-        }).catch(error => {
-            console.error('Share generation error:', error);
-            showShareOptions(dataToSave, { testCode: generateShortId(), gistId: null });
-        });
-    }
+            } else {
+            // 既存のコードがない場合は新規作成
+            generateShareUrl(dataToSave).then(shareResult => {
+                showShareOptions(dataToSave, shareResult);
+            }).catch(error => {
+                console.error('Share generation error:', error);
+                showShareOptions(dataToSave, { testCode: generateShortId(), cloudSaved: false });
+            });
+        }
 }
 
 // テストコード選択肢を表示
@@ -752,7 +735,7 @@ function showTestCodeOptions(dataToSave, existingCodes) {
              onclick="useExistingTestCode('${code.testCode}', ${JSON.stringify(dataToSave).replace(/"/g, '&quot;')})">
             <div style="font-size: 20px; font-weight: bold; color: #007aff;">${code.testCode}</div>
             <div style="font-size: 12px; color: #666;">
-                ${code.hasGist ? '☁️ クラウド保存済み' : '💾 ローカル保存のみ'}
+                ${code.hasCloud ? '☁️ クラウド保存済み' : '💾 ローカル保存のみ'}
             </div>
         </div>
     `).join('');
@@ -796,13 +779,13 @@ function useExistingTestCode(testCode, dataToSave) {
         try {
             const parsedData = JSON.parse(existingData);
             
-            if (parsedData.gistId) {
-                // Gistがある場合は更新
-                updateGistData(parsedData.gistId, dataToSave, testCode);
+            if (parsedData.cloudSaved && parsedData.binId) {
+                // クラウド保存がある場合は更新
+                updateCloudData(dataToSave, testCode, parsedData.binId);
             } else {
                 // ローカルのみの場合はローカル更新
                 localStorage.setItem(testKey, JSON.stringify(dataToSave));
-                showShareOptions(dataToSave, { testCode: testCode, gistId: null });
+                showShareOptions(dataToSave, { testCode: testCode, cloudSaved: false });
             }
         } catch (error) {
             console.error('Error using existing test code:', error);
@@ -823,47 +806,43 @@ function createNewTestCode(dataToSave) {
         showShareOptions(dataToSave, shareResult);
     }).catch(error => {
         console.error('Share generation error:', error);
-        showShareOptions(dataToSave, { testCode: generateShortId(), gistId: null });
+        showShareOptions(dataToSave, { testCode: generateShortId(), cloudSaved: false });
     });
 }
 
-// Gistデータを更新
-async function updateGistData(gistId, dataToSave, testCode) {
+// クラウドデータを更新
+async function updateCloudData(dataToSave, testCode, binId) {
     try {
-        const updateData = {
-            files: {
-                [`test_${testCode}.json`]: {
-                    content: JSON.stringify(dataToSave, null, 2)
-                }
-            }
-        };
-
-        const response = await fetch(`https://api.github.com/gists/${gistId}`, {
-            method: 'PATCH',
+        const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+            method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(updateData)
+            body: JSON.stringify({
+                ...dataToSave,
+                updated: new Date().toISOString(),
+                testCode: testCode
+            })
         });
 
         if (response.ok) {
             // ローカルデータも更新
             localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
-                gistId: gistId,
+                cloudSaved: true,
+                binId: binId,
                 testCode: testCode,
-                created: new Date().toISOString(),
-                ...dataToSave
+                updated: new Date().toISOString()
             }));
             
-            showShareOptions(dataToSave, { testCode: testCode, gistId: gistId });
+            showShareOptions(dataToSave, { testCode: testCode, cloudSaved: true });
         } else {
-            throw new Error('Gist update failed');
+            throw new Error('Cloud update failed');
         }
     } catch (error) {
-        console.error('Gist update error:', error);
+        console.error('Cloud update error:', error);
         // フォールバック：ローカル更新のみ
         localStorage.setItem(`testCode_${testCode}`, JSON.stringify(dataToSave));
-        showShareOptions(dataToSave, { testCode: testCode, gistId: null });
+                showShareOptions(dataToSave, { testCode: testCode, cloudSaved: false });
     }
 }
 
@@ -892,7 +871,7 @@ function showShareOptions(data, shareResult) {
     `;
     
     const testCode = shareResult.testCode;
-    const isCloudBased = shareResult.gistId !== null;
+    const isCloudBased = shareResult.cloudSaved === true;
     
     modal.innerHTML = `
         <div style="background: white; padding: 30px; border-radius: 15px; max-width: 90%; max-height: 80%; overflow: auto; text-align: center;">
@@ -1065,7 +1044,7 @@ function showExistingTestCodes() {
                     if (parsedData.questions || parsedData.gistId) {
                         existingCodes.push({
                             testCode: testCode,
-                            hasGist: !!parsedData.gistId,
+                            hasCloud: !!parsedData.cloudSaved,
                             created: parsedData.created || '不明'
                         });
                     }
@@ -1082,7 +1061,7 @@ function showExistingTestCodes() {
                 <div>
                     <span style="font-size: 18px; font-weight: bold; color: #007aff;">${code.testCode}</span>
                     <span style="margin-left: 10px; font-size: 12px; color: #666;">
-                        ${code.hasGist ? '☁️ クラウド' : '💾 ローカル'}
+                        ${code.hasCloud ? '☁️ クラウド' : '💾 ローカル'}
                     </span>
                 </div>
                 <button onclick="copyTestCode('${code.testCode}')" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;">
