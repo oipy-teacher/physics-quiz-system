@@ -1778,282 +1778,67 @@ function updateGradingProgress(current, total, message) {
 
 // OCR処理（Claude Vision API優先、Google Cloud Vision APIフォールバック）
 async function performOCR(imageDataUrl) {
-    // 1. Claude Vision API を最優先で試行
-    try {
-        const claudeResult = await performClaudeOCR(imageDataUrl);
-        if (claudeResult && claudeResult.confidence > 0.7) {
-            console.log('Claude OCR successful:', claudeResult);
-            return claudeResult;
-        }
-    } catch (error) {
-        console.log('Claude OCR not available, trying OpenAI GPT-4 Vision');
-    }
-    
-    // 1.5. OpenAI GPT-4 Vision API を次に試行
-    try {
-        const openaiResult = await performOpenAIOCR(imageDataUrl);
-        if (openaiResult && openaiResult.confidence > 0.7) {
-            console.log('OpenAI GPT-4 Vision OCR successful:', openaiResult);
-            return openaiResult;
-        }
-    } catch (error) {
-        console.log('OpenAI GPT-4 Vision not available, trying Google Cloud Vision API');
-    }
-    
-    // 2. Google Cloud Vision API を次に試行
-    if (GOOGLE_CLOUD_API_KEY !== 'YOUR_API_KEY_HERE') {
-        try {
-            const googleResult = await performGoogleCloudOCR(imageDataUrl);
-            if (googleResult && googleResult.confidence > 0.5) {
-                console.log('Google Cloud Vision OCR successful:', googleResult);
-                return googleResult;
-            }
-        } catch (error) {
-            console.log('Google Cloud Vision API failed, falling back to Tesseract');
-        }
-    }
-    
-    // 3. 最後にTesseract.jsフォールバック
-    return await performFallbackOCR(imageDataUrl);
+    // Claude API 一択！シンプルに！
+    console.log('🚀 Claude API で手書き認識開始！');
+    return await performClaudeOCR(imageDataUrl);
 }
 
-// 高精度OCR（OCR.space API使用 - 無料で高精度）
+// Claude API - 最高精度の手書き認識
 async function performClaudeOCR(imageDataUrl) {
-    try {
-        console.log('🔍 高精度OCR開始...');
-        const base64Image = imageDataUrl.split(',')[1];
-        
-        // OCR.space API（無料で高精度）
-        const formData = new FormData();
-        formData.append('base64Image', 'data:image/png;base64,' + base64Image);
-        formData.append('language', 'eng');
-        formData.append('isOverlayRequired', 'false');
-        formData.append('detectOrientation', 'false');
-        formData.append('scale', 'true');
-        formData.append('OCREngine', '2'); // エンジン2は手書きに強い
-        
-        const response = await fetch('https://api.ocr.space/parse/image', {
-            method: 'POST',
-            headers: {
-                'apikey': 'helloworld' // 無料APIキー
-            },
-            body: formData
-        });
-        
-        console.log('📡 OCR.space レスポンス受信:', response.status);
-        
-        if (!response.ok) {
-            throw new Error(`OCR.space API error: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        console.log('📋 OCR.space結果:', result);
-        
-        if (result.ParsedResults && result.ParsedResults[0] && result.ParsedResults[0].ParsedText) {
-            const recognizedText = result.ParsedResults[0].ParsedText.trim();
-            console.log('✅ 高精度OCR認識成功:', recognizedText);
-            
-            return {
-                fullText: recognizedText,
-                words: recognizedText.split(/[,\s\n\r]+/).filter(word => word.length > 0).map(word => ({
-                    text: word,
-                    confidence: 0.9 // 高い信頼度
-                })),
-                confidence: 0.9,
-                source: 'ocr_space'
-            };
-        }
-        
-        throw new Error('No text recognized by OCR.space');
-        
-    } catch (error) {
-        console.error('💥 高精度OCR完全エラー:', error);
-        throw error;
-    }
-}
-
-// OpenAI GPT-4 Vision API OCR（高精度）
-async function performOpenAIOCR(imageDataUrl) {
-    if (OPENAI_API_KEY === 'YOUR_OPENAI_API_KEY_HERE') {
-        throw new Error('OpenAI API key not configured');
-    }
+    console.log('🔍 Claude API 開始...');
     
-    try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: 'gpt-4-vision-preview',
-                messages: [
+    const base64Image = imageDataUrl.split(',')[1];
+    
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': CLAUDE_API_KEY,
+            'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+            model: 'claude-3-sonnet-20240229',
+            max_tokens: 1000,
+            messages: [{
+                role: 'user',
+                content: [
                     {
-                        role: 'user',
-                        content: [
-                            {
-                                type: 'text',
-                                text: '画像に書かれている手書きの数字や文字を正確に読み取ってください。物理の問題の回答として書かれた数値です。数字、小数点、単位記号のみを抽出して、カンマ区切りで返してください。例: 4.9,9.8'
-                            },
-                            {
-                                type: 'image_url',
-                                image_url: {
-                                    url: imageDataUrl
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens: 300
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.choices && result.choices[0] && result.choices[0].message) {
-            const recognizedText = result.choices[0].message.content.trim();
-            
-            return {
-                fullText: recognizedText,
-                words: recognizedText.split(/[,\s]+/).filter(word => word.length > 0).map(word => ({
-                    text: word,
-                    confidence: 0.9 // GPT-4 Vision の高い信頼度
-                })),
-                confidence: 0.9,
-                source: 'openai'
-            };
-        }
-        
-        throw new Error('No text recognized by OpenAI GPT-4 Vision');
-        
-    } catch (error) {
-        console.error('OpenAI GPT-4 Vision OCR error:', error);
-        throw error;
-    }
-}
-
-// Google Cloud Vision API OCR（分離）
-async function performGoogleCloudOCR(imageDataUrl) {
-    try {
-        // Base64データからimage部分を抽出
-        const base64Image = imageDataUrl.split(',')[1];
-        
-        const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_CLOUD_API_KEY}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                requests: [{
-                    image: {
-                        content: base64Image
+                        type: 'text',
+                        text: '画像の手書き数字を読み取って、カンマ区切りで返してください。例: 4.9,9.8'
                     },
-                    features: [
-                        { type: 'TEXT_DETECTION', maxResults: 10 },
-                        { type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 }
-                    ],
-                    imageContext: {
-                        languageHints: ['ja', 'en']
+                    {
+                        type: 'image',
+                        source: {
+                            type: 'base64',
+                            media_type: 'image/png',
+                            data: base64Image
+                        }
                     }
-                }]
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.responses && result.responses[0]) {
-            const textAnnotations = result.responses[0].textAnnotations;
-            if (textAnnotations && textAnnotations.length > 0) {
-                return {
-                    fullText: textAnnotations[0].description,
-                    words: textAnnotations.slice(1).map(annotation => ({
-                        text: annotation.description,
-                        confidence: annotation.confidence || 0.9
-                    })),
-                    confidence: textAnnotations[0].confidence || 0.9,
-                    source: 'google'
-                };
-            }
-        }
-        
-        throw new Error('No text recognized by Google Cloud Vision');
-        
-    } catch (error) {
-        console.error('Google Cloud Vision API error:', error);
-        throw error;
-    }
+                ]
+            }]
+        })
+    });
+    
+    console.log('📡 Claude レスポンス:', response.status);
+    
+    const result = await response.json();
+    console.log('📋 Claude 結果:', result);
+    
+    const recognizedText = result.content[0].text.trim();
+    console.log('✅ Claude 認識:', recognizedText);
+    
+    return {
+        fullText: recognizedText,
+        words: recognizedText.split(/[,\s]+/).filter(word => word.length > 0).map(word => ({
+            text: word,
+            confidence: 0.95
+        })),
+        confidence: 0.95,
+        source: 'claude'
+    };
 }
 
-// フォールバックOCR（Tesseract.js使用）- 精度向上版
-async function performFallbackOCR(imageDataUrl) {
-    try {
-        // Tesseract.jsがロードされていない場合は動的ロード
-        if (typeof Tesseract === 'undefined') {
-            await loadTesseract();
-        }
-        
-        // 画像前処理で精度向上
-        const processedImageUrl = await preprocessImageForOCR(imageDataUrl);
-        
-        // 複数の言語設定で試行
-        const languageConfigs = [
-            'jpn+eng',
-            'eng+jpn', 
-            'eng',
-            'jpn'
-        ];
-        
-        let bestResult = { fullText: '', confidence: 0 };
-        
-        for (const lang of languageConfigs) {
-            try {
-                const { data: { text, confidence, words } } = await Tesseract.recognize(
-                    processedImageUrl,
-                    lang,
-                    {
-                        logger: m => console.log(`OCR (${lang}):`, m),
-                        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
-                        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-=×÷√∞πθαβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ.,()[]{}/<>^_|\\~`\'\"!@#$%&*あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポ'
-                    }
-                );
-                
-                if (confidence > bestResult.confidence) {
-                    bestResult = {
-                        fullText: text.trim(),
-                        words: words ? words.map(word => ({
-                            text: word.text,
-                            confidence: word.confidence / 100
-                        })) : text.split(/\s+/).filter(word => word.length > 0).map(word => ({
-                            text: word,
-                            confidence: confidence / 100
-                        })),
-                        confidence: confidence / 100,
-                        language: lang
-                    };
-                }
-                
-                // 十分な精度が得られた場合は早期終了
-                if (confidence > 80) {
-                    break;
-                }
-            } catch (langError) {
-                console.warn(`OCR failed for language ${lang}:`, langError);
-            }
-        }
-        
-        console.log('Best OCR result:', bestResult);
-        return bestResult;
-        
-    } catch (error) {
-        console.error('Tesseract OCR error:', error);
-        return {
-            fullText: '',
-            words: [],
-            confidence: 0,
-            error: error.message
-        };
-    }
-}
+// 不要な関数は全削除！Claude一択！
 
 // 画像前処理でOCR精度向上
 async function preprocessImageForOCR(imageDataUrl) {
