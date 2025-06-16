@@ -37,9 +37,10 @@ const ADMIN_PASSWORD = 'physics2024';
 // 2. 下記の 'YOUR_XXX_API_KEY_HERE' を実際のAPIキーに置き換え
 // 3. 例: const CLAUDE_API_KEY = 'sk-ant-api03-abc123...';
 
-const CLAUDE_API_KEY = 'YOUR_CLAUDE_API_KEY_HERE';     // Claude API キー（最高精度95%）
-const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE';     // OpenAI API キー（高精度90%）
-const GOOGLE_CLOUD_API_KEY = 'YOUR_API_KEY_HERE';      // Google Cloud Vision API キー（中精度）
+// APIキーはconfig.jsから読み込み（セキュリティのため）
+const CLAUDE_API_KEY = window.CLAUDE_API_KEY || 'YOUR_CLAUDE_API_KEY_HERE';     // Claude API キー（最高精度95%）
+const OPENAI_API_KEY = window.OPENAI_API_KEY || 'YOUR_OPENAI_API_KEY_HERE';     // OpenAI API キー（高精度90%）
+const GOOGLE_CLOUD_API_KEY = window.GOOGLE_CLOUD_API_KEY || 'YOUR_API_KEY_HERE';      // Google Cloud Vision API キー（中精度）
 
 // API設定状況を表示
 console.log('🔧 OCR API設定状況:');
