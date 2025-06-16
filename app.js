@@ -28,11 +28,24 @@ let inputMethod = 'canvas'; // 'canvas' または 'text'
 let ocrResults = [];
 let gradingResults = [];
 
-// 管理者パスワード（実際の運用では環境変数やサーバー側で管理）
+// ========== 設定 ==========
 const ADMIN_PASSWORD = 'physics2024';
 
-// Google Cloud Vision API設定（実際の運用では環境変数で管理）
-const GOOGLE_CLOUD_API_KEY = 'YOUR_API_KEY_HERE'; // 実際のAPIキーに置き換え
+// OCR API設定（最高精度を得るために設定してください）
+// 設定方法：
+// 1. 各サービスでAPIキーを取得
+// 2. 下記の 'YOUR_XXX_API_KEY_HERE' を実際のAPIキーに置き換え
+// 3. 例: const CLAUDE_API_KEY = 'sk-ant-api03-abc123...';
+
+const CLAUDE_API_KEY = 'YOUR_CLAUDE_API_KEY_HERE';     // Claude API キー（最高精度95%）
+const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE';     // OpenAI API キー（高精度90%）
+const GOOGLE_CLOUD_API_KEY = 'YOUR_API_KEY_HERE';      // Google Cloud Vision API キー（中精度）
+
+// API設定状況を表示
+console.log('🔧 OCR API設定状況:');
+console.log('Claude API:', CLAUDE_API_KEY !== 'YOUR_CLAUDE_API_KEY_HERE' ? '✅ 設定済み（最高精度）' : '❌ 未設定');
+console.log('OpenAI API:', OPENAI_API_KEY !== 'YOUR_OPENAI_API_KEY_HERE' ? '✅ 設定済み（高精度）' : '❌ 未設定');
+console.log('Google Cloud API:', GOOGLE_CLOUD_API_KEY !== 'YOUR_API_KEY_HERE' ? '✅ 設定済み（中精度）' : '❌ 未設定');
 
 // 初期化
 window.onload = function() {
@@ -1809,9 +1822,6 @@ async function performOCR(imageDataUrl) {
 
 // Claude Vision API OCR（最高精度）
 async function performClaudeOCR(imageDataUrl) {
-    // Claude APIキーが設定されている場合のみ実行
-    const CLAUDE_API_KEY = 'YOUR_CLAUDE_API_KEY_HERE'; // 実際のAPIキーに置き換え
-    
     if (CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
         throw new Error('Claude API key not configured');
     }
@@ -1875,9 +1885,6 @@ async function performClaudeOCR(imageDataUrl) {
 
 // OpenAI GPT-4 Vision API OCR（高精度）
 async function performOpenAIOCR(imageDataUrl) {
-    // OpenAI APIキーが設定されている場合のみ実行
-    const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE'; // 実際のAPIキーに置き換え
-    
     if (OPENAI_API_KEY === 'YOUR_OPENAI_API_KEY_HERE') {
         throw new Error('OpenAI API key not configured');
     }
