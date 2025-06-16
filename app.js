@@ -1360,17 +1360,26 @@ function initCanvasElements() {
 }
 
 function resizeCanvas() {
-    if (!canvas) return;
+    if (!canvas || !ctx) return;
     
     const container = canvas.parentElement;
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
+    if (!container) return;
+    
+    // コンテナサイズを取得（最小サイズを保証）
+    const containerWidth = Math.max(container.clientWidth, 300);
+    const containerHeight = Math.max(container.clientHeight, 400);
+    
+    canvas.width = containerWidth;
+    canvas.height = containerHeight;
+    
+    console.log('Canvas resized to:', containerWidth, 'x', containerHeight);
     
     // Canvas設定
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = penSize;
+    ctx.lineWidth = penSize || 3;
     ctx.strokeStyle = '#000000';
+    ctx.fillStyle = '#000000';
 }
 
 function handleTouch(e) {
