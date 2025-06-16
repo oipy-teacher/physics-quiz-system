@@ -34,7 +34,7 @@ const ADMIN_PASSWORD = 'physics2024';
 // OCR API設定（最高精度を得るために設定してください）
 // ⚠️ 注意: APIキーは公開されますが、教育用途なので問題ありません
 // Claude API キー（直接埋め込み - 教育用途のため）
-const CLAUDE_API_KEY = '新しいAPIキーをここに貼り付けてください';
+const CLAUDE_API_KEY = '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';
 const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE';     // OpenAI API キー（高精度90%）
 const GOOGLE_CLOUD_API_KEY = 'YOUR_API_KEY_HERE';      // Google Cloud Vision API キー（中精度）
 
@@ -1827,12 +1827,14 @@ async function performClaudeOCR(imageDataUrl) {
         console.log('🔍 Claude OCR開始...');
         const base64Image = imageDataUrl.split(',')[1];
         
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
+        // CORS回避のためプロキシサーバー経由でアクセス
+        const response = await fetch('https://cors-anywhere.herokuapp.com/https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'x-api-key': CLAUDE_API_KEY,
-                'anthropic-version': '2023-06-01'
+                'anthropic-version': '2023-06-01',
+                'X-Requested-With': 'XMLHttpRequest'
             },
             body: JSON.stringify({
                 model: 'claude-3-sonnet-20240229',
