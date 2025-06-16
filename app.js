@@ -34,7 +34,7 @@ const ADMIN_PASSWORD = 'physics2024';
 // OCR API設定（最高精度を得るために設定してください）
 // ⚠️ 注意: APIキーは公開されますが、教育用途なので問題ありません
 // Claude API キー（直接埋め込み - 教育用途のため）
-const CLAUDE_API_KEY = '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';
+const CLAUDE_API_KEY = '新しいAPIキーをここに貼り付けてください';
 const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE';     // OpenAI API キー（高精度90%）
 const GOOGLE_CLOUD_API_KEY = 'YOUR_API_KEY_HERE';      // Google Cloud Vision API キー（中精度）
 
@@ -1819,11 +1819,12 @@ async function performOCR(imageDataUrl) {
 
 // Claude Vision API OCR（最高精度）
 async function performClaudeOCR(imageDataUrl) {
-    if (CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
+    if (CLAUDE_API_KEY === '新しいAPIキーをここに貼り付けてください' || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
         throw new Error('Claude API key not configured');
     }
     
     try {
+        console.log('🔍 Claude OCR開始...');
         const base64Image = imageDataUrl.split(',')[1];
         
         const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1856,10 +1857,20 @@ async function performClaudeOCR(imageDataUrl) {
             })
         });
         
+        console.log('📡 Claude API レスポンス受信:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Claude API エラー:', response.status, errorText);
+            throw new Error(`Claude API error: ${response.status} - ${errorText}`);
+        }
+        
         const result = await response.json();
+        console.log('📋 Claude API結果:', result);
         
         if (result.content && result.content[0] && result.content[0].text) {
             const recognizedText = result.content[0].text.trim();
+            console.log('✅ Claude認識成功:', recognizedText);
             
             return {
                 fullText: recognizedText,
@@ -1875,7 +1886,7 @@ async function performClaudeOCR(imageDataUrl) {
         throw new Error('No text recognized by Claude');
         
     } catch (error) {
-        console.error('Claude OCR error:', error);
+        console.error('💥 Claude OCR完全エラー:', error);
         throw error;
     }
 }
