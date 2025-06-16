@@ -2366,7 +2366,12 @@ function calculateResults() {
                 </div>
                 
                 <div class="your-answer" style="width: 100%; margin-bottom: 10px;">
-                    <strong>あなたの回答:</strong> ${result.userAnswer}
+                    <strong>認識された文字:</strong> ${result.userAnswer}
+                    ${result.gradingDetails && result.gradingDetails.recognizedText !== result.userAnswer ? `
+                        <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                            ※ 手書き文字をコンピューターが読み取った結果
+                        </div>
+                    ` : ''}
                 </div>
                 
                 <div class="correct-answers" style="width: 100%; margin-bottom: 10px;">
@@ -2383,13 +2388,20 @@ function calculateResults() {
                 
                 ${result.matchedPattern ? `
                     <div class="matched-pattern" style="width: 100%; margin-bottom: 10px;">
-                        <strong>マッチしたパターン:</strong> ${result.matchedPattern}
+                        <strong>最も近い正解パターン:</strong> ${result.matchedPattern}
+                        <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                            ※ システムが判定した最も近い正解候補
+                        </div>
                     </div>
                 ` : ''}
                 
                 <div style="font-size: 14px; color: #666; width: 100%;">
-                    <strong>判定信頼度:</strong> ${Math.round(result.confidence * 100)}%
-                    <div style="width: 100%; height: 8px; background-color: #e0e0e0; border-radius: 4px; margin-top: 5px;">
+                    <strong>マッチング精度:</strong> ${Math.round(result.confidence * 100)}%
+                    <div style="font-size: 12px; margin-top: 2px; margin-bottom: 5px;">
+                        ${result.confidence >= 0.4 ? '✅ 正解判定' : '❌ 不正解判定'} 
+                        (手書き: 40%以上で正解、テキスト: 80%以上で正解)
+                    </div>
+                    <div style="width: 100%; height: 8px; background-color: #e0e0e0; border-radius: 4px;">
                         <div style="width: ${Math.round(result.confidence * 100)}%; height: 100%; background: linear-gradient(90deg, #dc3545, #ffc107, #28a745); border-radius: 4px;"></div>
                     </div>
                 </div>
