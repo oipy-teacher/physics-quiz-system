@@ -1718,7 +1718,10 @@ async function performAdvancedGrading() {
                 i
             );
             
-            gradingResults[i] = gradingResult;
+            gradingResults[i] = {
+                ...gradingResult,
+                ocrResult: ocrResult // OCR結果全体を保存
+            };
             
         } catch (error) {
             console.error(`Grading error for question ${i + 1}:`, error);
@@ -1763,13 +1766,178 @@ function updateGradingProgress(current, total, message) {
     }
 }
 
-// OCR処理（Google Cloud Vision API使用）
+// OCR処理（Claude Vision API優先、Google Cloud Vision APIフォールバック）
 async function performOCR(imageDataUrl) {
-    // 実際のAPIキーが設定されていない場合はフォールバック
-    if (GOOGLE_CLOUD_API_KEY === 'YOUR_API_KEY_HERE') {
-        return await performFallbackOCR(imageDataUrl);
+    // 1. Claude Vision API を最優先で試行
+    try {
+        const claudeResult = await performClaudeOCR(imageDataUrl);
+        if (claudeResult && claudeResult.confidence > 0.7) {
+            console.log('Claude OCR successful:', claudeResult);
+            return claudeResult;
+        }
+    } catch (error) {
+        console.log('Claude OCR not available, trying OpenAI GPT-4 Vision');
     }
     
+    // 1.5. OpenAI GPT-4 Vision API を次に試行
+    try {
+        const openaiResult = await performOpenAIOCR(imageDataUrl);
+        if (openaiResult && openaiResult.confidence > 0.7) {
+            console.log('OpenAI GPT-4 Vision OCR successful:', openaiResult);
+            return openaiResult;
+        }
+    } catch (error) {
+        console.log('OpenAI GPT-4 Vision not available, trying Google Cloud Vision API');
+    }
+    
+    // 2. Google Cloud Vision API を次に試行
+    if (GOOGLE_CLOUD_API_KEY !== 'YOUR_API_KEY_HERE') {
+        try {
+            const googleResult = await performGoogleCloudOCR(imageDataUrl);
+            if (googleResult && googleResult.confidence > 0.5) {
+                console.log('Google Cloud Vision OCR successful:', googleResult);
+                return googleResult;
+            }
+        } catch (error) {
+            console.log('Google Cloud Vision API failed, falling back to Tesseract');
+        }
+    }
+    
+    // 3. 最後にTesseract.jsフォールバック
+    return await performFallbackOCR(imageDataUrl);
+}
+
+// Claude Vision API OCR（最高精度）
+async function performClaudeOCR(imageDataUrl) {
+    // Claude APIキーが設定されている場合のみ実行
+    const CLAUDE_API_KEY = 'YOUR_CLAUDE_API_KEY_HERE'; // 実際のAPIキーに置き換え
+    
+    if (CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
+        throw new Error('Claude API key not configured');
+    }
+    
+    try {
+        const base64Image = imageDataUrl.split(',')[1];
+        
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': CLAUDE_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-3-sonnet-20240229',
+                max_tokens: 1000,
+                messages: [{
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'text',
+                            text: '画像に書かれている手書きの数字や文字を正確に読み取ってください。物理の問題の回答として書かれた数値です。数字、小数点、単位記号のみを抽出して、カンマ区切りで返してください。例: 4.9,9.8'
+                        },
+                        {
+                            type: 'image',
+                            source: {
+                                type: 'base64',
+                                media_type: 'image/png',
+                                data: base64Image
+                            }
+                        }
+                    ]
+                }]
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.content && result.content[0] && result.content[0].text) {
+            const recognizedText = result.content[0].text.trim();
+            
+            return {
+                fullText: recognizedText,
+                words: recognizedText.split(/[,\s]+/).filter(word => word.length > 0).map(word => ({
+                    text: word,
+                    confidence: 0.95 // Claude の高い信頼度
+                })),
+                confidence: 0.95,
+                source: 'claude'
+            };
+        }
+        
+        throw new Error('No text recognized by Claude');
+        
+    } catch (error) {
+        console.error('Claude OCR error:', error);
+        throw error;
+    }
+}
+
+// OpenAI GPT-4 Vision API OCR（高精度）
+async function performOpenAIOCR(imageDataUrl) {
+    // OpenAI APIキーが設定されている場合のみ実行
+    const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE'; // 実際のAPIキーに置き換え
+    
+    if (OPENAI_API_KEY === 'YOUR_OPENAI_API_KEY_HERE') {
+        throw new Error('OpenAI API key not configured');
+    }
+    
+    try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4-vision-preview',
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'text',
+                                text: '画像に書かれている手書きの数字や文字を正確に読み取ってください。物理の問題の回答として書かれた数値です。数字、小数点、単位記号のみを抽出して、カンマ区切りで返してください。例: 4.9,9.8'
+                            },
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: imageDataUrl
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens: 300
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.choices && result.choices[0] && result.choices[0].message) {
+            const recognizedText = result.choices[0].message.content.trim();
+            
+            return {
+                fullText: recognizedText,
+                words: recognizedText.split(/[,\s]+/).filter(word => word.length > 0).map(word => ({
+                    text: word,
+                    confidence: 0.9 // GPT-4 Vision の高い信頼度
+                })),
+                confidence: 0.9,
+                source: 'openai'
+            };
+        }
+        
+        throw new Error('No text recognized by OpenAI GPT-4 Vision');
+        
+    } catch (error) {
+        console.error('OpenAI GPT-4 Vision OCR error:', error);
+        throw error;
+    }
+}
+
+// Google Cloud Vision API OCR（分離）
+async function performGoogleCloudOCR(imageDataUrl) {
     try {
         // Base64データからimage部分を抽出
         const base64Image = imageDataUrl.split(',')[1];
@@ -1806,16 +1974,17 @@ async function performOCR(imageDataUrl) {
                         text: annotation.description,
                         confidence: annotation.confidence || 0.9
                     })),
-                    confidence: textAnnotations[0].confidence || 0.9
+                    confidence: textAnnotations[0].confidence || 0.9,
+                    source: 'google'
                 };
             }
         }
         
-        return { fullText: '', words: [], confidence: 0 };
+        throw new Error('No text recognized by Google Cloud Vision');
         
     } catch (error) {
         console.error('Google Cloud Vision API error:', error);
-        return await performFallbackOCR(imageDataUrl);
+        throw error;
     }
 }
 
@@ -2301,6 +2470,16 @@ function calculatePhoneticScore(recognized, pattern) {
     return 0;
 }
 
+// OCRソース名を取得
+function getOCRSourceName(source) {
+    switch (source) {
+        case 'claude': return 'Claude Vision API（最高精度）';
+        case 'openai': return 'OpenAI GPT-4 Vision（高精度）';
+        case 'google': return 'Google Cloud Vision API（中精度）';
+        default: return 'Tesseract.js（基本精度）';
+    }
+}
+
 // 結果計算（高精度版）
 function calculateResults() {
     console.log('calculateResults called');
@@ -2367,11 +2546,15 @@ function calculateResults() {
                 
                 <div class="your-answer" style="width: 100%; margin-bottom: 10px;">
                     <strong>認識された文字:</strong> ${result.userAnswer}
-                    ${result.gradingDetails && result.gradingDetails.recognizedText !== result.userAnswer ? `
+                    ${result.gradingDetails && result.gradingDetails.ocrResult ? `
+                        <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                            ※ ${getOCRSourceName(result.gradingDetails.ocrResult.source)}で読み取り
+                        </div>
+                    ` : `
                         <div style="font-size: 12px; color: #666; margin-top: 2px;">
                             ※ 手書き文字をコンピューターが読み取った結果
                         </div>
-                    ` : ''}
+                    `}
                 </div>
                 
                 <div class="correct-answers" style="width: 100%; margin-bottom: 10px;">
