@@ -1817,78 +1817,57 @@ async function performOCR(imageDataUrl) {
     return await performFallbackOCR(imageDataUrl);
 }
 
-// Claude Vision API OCR（最高精度）
+// 高精度OCR（OCR.space API使用 - 無料で高精度）
 async function performClaudeOCR(imageDataUrl) {
-    if (CLAUDE_API_KEY === '新しいAPIキーをここに貼り付けてください' || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
-        throw new Error('Claude API key not configured');
-    }
-    
     try {
-        console.log('🔍 Claude OCR開始...');
+        console.log('🔍 高精度OCR開始...');
         const base64Image = imageDataUrl.split(',')[1];
         
-        // CORS回避のためプロキシサーバー経由でアクセス
-        const response = await fetch('https://cors-anywhere.herokuapp.com/https://api.anthropic.com/v1/messages', {
+        // OCR.space API（無料で高精度）
+        const formData = new FormData();
+        formData.append('base64Image', 'data:image/png;base64,' + base64Image);
+        formData.append('language', 'eng');
+        formData.append('isOverlayRequired', 'false');
+        formData.append('detectOrientation', 'false');
+        formData.append('scale', 'true');
+        formData.append('OCREngine', '2'); // エンジン2は手書きに強い
+        
+        const response = await fetch('https://api.ocr.space/parse/image', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': CLAUDE_API_KEY,
-                'anthropic-version': '2023-06-01',
-                'X-Requested-With': 'XMLHttpRequest'
+                'apikey': 'helloworld' // 無料APIキー
             },
-            body: JSON.stringify({
-                model: 'claude-3-sonnet-20240229',
-                max_tokens: 1000,
-                messages: [{
-                    role: 'user',
-                    content: [
-                        {
-                            type: 'text',
-                            text: '画像に書かれている手書きの数字や文字を正確に読み取ってください。物理の問題の回答として書かれた数値です。数字、小数点、単位記号のみを抽出して、カンマ区切りで返してください。例: 4.9,9.8'
-                        },
-                        {
-                            type: 'image',
-                            source: {
-                                type: 'base64',
-                                media_type: 'image/png',
-                                data: base64Image
-                            }
-                        }
-                    ]
-                }]
-            })
+            body: formData
         });
         
-        console.log('📡 Claude API レスポンス受信:', response.status);
+        console.log('📡 OCR.space レスポンス受信:', response.status);
         
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Claude API エラー:', response.status, errorText);
-            throw new Error(`Claude API error: ${response.status} - ${errorText}`);
+            throw new Error(`OCR.space API error: ${response.status}`);
         }
         
         const result = await response.json();
-        console.log('📋 Claude API結果:', result);
+        console.log('📋 OCR.space結果:', result);
         
-        if (result.content && result.content[0] && result.content[0].text) {
-            const recognizedText = result.content[0].text.trim();
-            console.log('✅ Claude認識成功:', recognizedText);
+        if (result.ParsedResults && result.ParsedResults[0] && result.ParsedResults[0].ParsedText) {
+            const recognizedText = result.ParsedResults[0].ParsedText.trim();
+            console.log('✅ 高精度OCR認識成功:', recognizedText);
             
             return {
                 fullText: recognizedText,
-                words: recognizedText.split(/[,\s]+/).filter(word => word.length > 0).map(word => ({
+                words: recognizedText.split(/[,\s\n\r]+/).filter(word => word.length > 0).map(word => ({
                     text: word,
-                    confidence: 0.95 // Claude の高い信頼度
+                    confidence: 0.9 // 高い信頼度
                 })),
-                confidence: 0.95,
-                source: 'claude'
+                confidence: 0.9,
+                source: 'ocr_space'
             };
         }
         
-        throw new Error('No text recognized by Claude');
+        throw new Error('No text recognized by OCR.space');
         
     } catch (error) {
-        console.error('💥 Claude OCR完全エラー:', error);
+        console.error('💥 高精度OCR完全エラー:', error);
         throw error;
     }
 }
