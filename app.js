@@ -1768,37 +1768,49 @@ function updateGradingProgress(current, total, message) {
 
 // OCR処理（Claude API優先、フォールバック付き）
 async function performOCR(imageDataUrl) {
+    console.log('=== OCR処理開始 ===');
+    const claudeApiKey = localStorage.getItem('claudeApiKey');
+    console.log('Claude APIキー存在:', !!claudeApiKey);
+    
     // Claude APIを最初に試行
     try {
+        console.log('Claude API試行中...');
         const claudeResult = await performClaudeOCR(imageDataUrl);
         if (claudeResult && claudeResult.fullText) {
-            console.log('Claude OCR successful:', claudeResult.fullText);
+            console.log('✅ Claude OCR成功:', claudeResult.fullText);
             return claudeResult;
         }
     } catch (error) {
-        console.log('Claude OCR failed, trying Google Vision API:', error.message);
+        console.log('❌ Claude OCR失敗, Google Vision APIを試行:', error.message);
     }
     
     // Google Cloud Vision APIを次に試行
     if (GOOGLE_CLOUD_API_KEY !== 'YOUR_API_KEY_HERE') {
         try {
+            console.log('Google Vision API試行中...');
             const googleResult = await performGoogleOCR(imageDataUrl);
             if (googleResult && googleResult.fullText) {
-                console.log('Google Vision API successful:', googleResult.fullText);
+                console.log('✅ Google Vision API成功:', googleResult.fullText);
                 return googleResult;
             }
         } catch (error) {
-            console.log('Google Vision API failed, trying Tesseract:', error.message);
+            console.log('❌ Google Vision API失敗, Tesseractを試行:', error.message);
         }
     }
     
     // 最後にTesseractを試行
-    return await performFallbackOCR(imageDataUrl);
+    console.log('Tesseract試行中...');
+    const tesseractResult = await performFallbackOCR(imageDataUrl);
+    console.log('Tesseract結果:', tesseractResult.fullText || '認識失敗');
+    return tesseractResult;
 }
 
 // Claude API OCR処理
 async function performClaudeOCR(imageDataUrl) {
     const CLAUDE_API_KEY = localStorage.getItem('claudeApiKey') || 'YOUR_CLAUDE_API_KEY_HERE';
+    
+    console.log('Claude OCR開始');
+    console.log('APIキー確認:', CLAUDE_API_KEY ? CLAUDE_API_KEY.substring(0, 20) + '...' : '未設定');
     
     if (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
         throw new Error('Claude API key not configured');
@@ -1808,6 +1820,10 @@ async function performClaudeOCR(imageDataUrl) {
         // Base64データからimage部分を抽出
         const base64Image = imageDataUrl.split(',')[1];
         const mimeType = imageDataUrl.split(';')[0].split(':')[1];
+        
+        console.log('Claude APIリクエスト送信中...');
+        console.log('MIME type:', mimeType);
+        console.log('画像データサイズ:', Math.round(base64Image.length / 1024), 'KB');
         
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
@@ -1839,14 +1855,20 @@ async function performClaudeOCR(imageDataUrl) {
             })
         });
         
+        console.log('Claude APIレスポンス受信:', response.status, response.statusText);
+        
         if (!response.ok) {
-            throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error('Claude API エラー詳細:', errorText);
+            throw new Error(`Claude API error: ${response.status} ${response.statusText} - ${errorText}`);
         }
         
         const result = await response.json();
+        console.log('Claude API結果:', result);
         
         if (result.content && result.content[0] && result.content[0].text) {
             const recognizedText = result.content[0].text.trim();
+            console.log('Claude認識テキスト:', recognizedText);
             
             return {
                 fullText: recognizedText,
@@ -1862,7 +1884,7 @@ async function performClaudeOCR(imageDataUrl) {
         throw new Error('No text content in Claude API response');
         
     } catch (error) {
-        console.error('Claude OCR error:', error);
+        console.error('Claude OCR エラー:', error);
         throw error;
     }
 }
@@ -2627,7 +2649,10 @@ function saveClaudeApiKey() {
     try {
         localStorage.setItem('claudeApiKey', apiKey);
         updateClaudeApiStatus();
-        showAdminSuccess('Claude APIキーを保存しました。');
+        showAdminSuccess('Claude APIキーを保存しました。文字認識でClaude APIが優先的に使用されます。');
+        
+        // デバッグ用: 保存されたキーを確認
+        console.log('Claude API key saved:', apiKey.substring(0, 20) + '...');
         
         // 入力フィールドをクリア（セキュリティのため）
         apiKeyInput.value = '';
@@ -2645,6 +2670,8 @@ async function testClaudeApi() {
         showAdminError('まずAPIキーを保存してください。');
         return;
     }
+    
+    console.log('Testing Claude API with key:', apiKey.substring(0, 20) + '...');
     
     try {
         // テスト用の小さな画像を作成
@@ -2692,11 +2719,13 @@ function updateClaudeApiStatus(isActive = null) {
     }
     
     if (isActive && apiKey) {
-        statusElement.textContent = 'Claude API: 設定済み';
+        statusElement.textContent = 'Claude API: 設定済み ✓';
         statusElement.className = 'api-status-badge api-status-active';
+        console.log('Claude API status: ACTIVE');
     } else {
         statusElement.textContent = 'Claude API: 未設定';
         statusElement.className = 'api-status-badge api-status-inactive';
+        console.log('Claude API status: INACTIVE');
     }
 }
 
