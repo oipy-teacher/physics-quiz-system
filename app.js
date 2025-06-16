@@ -242,6 +242,12 @@ function showScreen(screen) {
             break;
         case 'test':
             document.getElementById('testScreen').style.display = 'flex';
+            // テスト画面表示時にCanvas初期化を確実に実行
+            setTimeout(() => {
+                console.log('Test screen displayed, initializing canvas...');
+                initCanvas();
+                setInputMethod('canvas');
+            }, 200);
             break;
         case 'result':
             document.getElementById('resultScreen').style.display = 'flex';
@@ -1173,6 +1179,14 @@ function loadQuestionsFromUrl() {
             localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
             localStorage.setItem('physicsQuizEnabled', testEnabled.toString());
             
+            // URLから直接テスト画面に遷移する場合のCanvas初期化
+            if (window.location.hash === '#test' || document.getElementById('testScreen')) {
+                setTimeout(() => {
+                    initCanvas();
+                    setInputMethod('canvas');
+                }, 200);
+            }
+            
             return true;
         }
     } catch (error) {
@@ -1283,17 +1297,33 @@ function backToLogin() {
 
 // Canvas初期化
 function initCanvas() {
+    console.log('Initializing canvas...');
+    
     canvas = document.getElementById('answerCanvas');
     if (!canvas) {
         console.error('Canvas element not found');
+        // 少し待ってから再試行
+        setTimeout(() => {
+            canvas = document.getElementById('answerCanvas');
+            if (canvas) {
+                console.log('Canvas found on retry');
+                initCanvasElements();
+            }
+        }, 500);
         return;
     }
     
+    initCanvasElements();
+}
+
+function initCanvasElements() {
     ctx = canvas.getContext('2d');
     if (!ctx) {
         console.error('Canvas context not available');
         return;
     }
+    
+    console.log('Canvas context initialized, canvas size:', canvas.width, 'x', canvas.height);
     
     // 既存のイベントリスナーを削除（重複防止）
     canvas.removeEventListener('mousedown', startDrawing);
@@ -1319,7 +1349,14 @@ function initCanvas() {
     canvas.addEventListener('touchmove', handleTouch, { passive: false });
     canvas.addEventListener('touchend', stopDrawing, { passive: false });
     
-    console.log('Canvas initialized successfully');
+    console.log('Canvas initialized successfully with touch events');
+    
+    // テスト描画で動作確認
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+    ctx.fillRect(0, 0, 10, 10);
+    setTimeout(() => {
+        ctx.clearRect(0, 0, 10, 10);
+    }, 1000);
 }
 
 function resizeCanvas() {
