@@ -1819,7 +1819,7 @@ async function performOCR(imageDataUrl) {
     }
 }
 
-// フォールバックOCR（Tesseract.js使用）
+// フォールバックOCR（Tesseract.js使用）- 精度向上版
 async function performFallbackOCR(imageDataUrl) {
     try {
         // Tesseract.jsがロードされていない場合は動的ロード
@@ -1827,22 +1827,57 @@ async function performFallbackOCR(imageDataUrl) {
             await loadTesseract();
         }
         
-        const { data: { text, confidence } } = await Tesseract.recognize(
-            imageDataUrl,
-            'jpn+eng',
-            {
-                logger: m => console.log(m)
-            }
-        );
+        // 画像前処理で精度向上
+        const processedImageUrl = await preprocessImageForOCR(imageDataUrl);
         
-        return {
-            fullText: text.trim(),
-            words: text.split(/\s+/).filter(word => word.length > 0).map(word => ({
-                text: word,
-                confidence: confidence / 100
-            })),
-            confidence: confidence / 100
-        };
+        // 複数の言語設定で試行
+        const languageConfigs = [
+            'jpn+eng',
+            'eng+jpn', 
+            'eng',
+            'jpn'
+        ];
+        
+        let bestResult = { fullText: '', confidence: 0 };
+        
+        for (const lang of languageConfigs) {
+            try {
+                const { data: { text, confidence, words } } = await Tesseract.recognize(
+                    processedImageUrl,
+                    lang,
+                    {
+                        logger: m => console.log(`OCR (${lang}):`, m),
+                        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+                        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-=×÷√∞πθαβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ.,()[]{}/<>^_|\\~`\'\"!@#$%&*あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポ'
+                    }
+                );
+                
+                if (confidence > bestResult.confidence) {
+                    bestResult = {
+                        fullText: text.trim(),
+                        words: words ? words.map(word => ({
+                            text: word.text,
+                            confidence: word.confidence / 100
+                        })) : text.split(/\s+/).filter(word => word.length > 0).map(word => ({
+                            text: word,
+                            confidence: confidence / 100
+                        })),
+                        confidence: confidence / 100,
+                        language: lang
+                    };
+                }
+                
+                // 十分な精度が得られた場合は早期終了
+                if (confidence > 80) {
+                    break;
+                }
+            } catch (langError) {
+                console.warn(`OCR failed for language ${lang}:`, langError);
+            }
+        }
+        
+        console.log('Best OCR result:', bestResult);
+        return bestResult;
         
     } catch (error) {
         console.error('Tesseract OCR error:', error);
@@ -1853,6 +1888,52 @@ async function performFallbackOCR(imageDataUrl) {
             error: error.message
         };
     }
+}
+
+// 画像前処理でOCR精度向上
+async function preprocessImageForOCR(imageDataUrl) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 画像サイズを2倍に拡大（解像度向上）
+            canvas.width = img.width * 2;
+            canvas.height = img.height * 2;
+            
+            // 背景を白に設定
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // スムージングを無効化（シャープな文字のため）
+            ctx.imageSmoothingEnabled = false;
+            
+            // 画像を拡大して描画
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            // コントラスト強化
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                // グレースケール変換
+                const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                
+                // 二値化（白黒はっきり）
+                const binary = gray > 128 ? 255 : 0;
+                
+                data[i] = binary;     // R
+                data[i + 1] = binary; // G
+                data[i + 2] = binary; // B
+                // data[i + 3] はアルファ値（透明度）なので変更しない
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            resolve(canvas.toDataURL());
+        };
+        img.src = imageDataUrl;
+    });
 }
 
 // Tesseract.js動的ロード
@@ -1904,8 +1985,8 @@ async function performAdvancedPatternMatching(ocrResult, correctPatterns, questi
         }
     }
     
-    // 閾値を設定（70%以上で正解とする - テキスト入力の場合は厳密に）
-    const threshold = ocrResult.confidence === 1.0 ? 0.7 : 0.6; // テキスト入力は厳しく
+    // 閾値を設定（手書きの場合は緩く、テキスト入力の場合は厳密に）
+    const threshold = ocrResult.confidence === 1.0 ? 0.8 : 0.5; // テキスト入力は厳しく、手書きは緩く
     const isCorrect = highestScore >= threshold;
     
     console.log(`Best match: "${matchedPattern}" with score ${highestScore}`);
@@ -1987,14 +2068,42 @@ function calculateMatchScore(recognizedText, pattern, ocrResult) {
     return Math.min(1.0, Math.max(0, adjustedScore));
 }
 
-// テキスト正規化
+// テキスト正規化（物理記号対応強化版）
 function normalizeText(text) {
     return text
         .toLowerCase()
-        .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)) // 全角数字を半角に
-        .replace(/[Ａ-Ｚａ-ｚ]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)) // 全角英字を半角に
-        .replace(/\s+/g, '') // 空白除去
-        .replace(/[.,、。]/g, '') // 句読点除去
+        .replace(/\s+/g, '')
+        // 全角→半角変換
+        .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+        .replace(/[Ａ-Ｚａ-ｚ]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+        // 物理記号の統一
+        .replace(/×/g, '*')
+        .replace(/÷/g, '/')
+        .replace(/²/g, '^2')
+        .replace(/³/g, '^3')
+        .replace(/√/g, 'sqrt')
+        .replace(/π/g, 'pi')
+        // よくある誤認識の修正
+        .replace(/[oO]/g, '0')   // o, O → 0
+        .replace(/[il1I]/g, '1') // i, l, I → 1
+        .replace(/[s5S]/g, '5')  // s, S → 5
+        .replace(/[g9]/g, '9')   // g → 9
+        .replace(/[z2Z]/g, '2')  // z, Z → 2
+        .replace(/[b6]/g, '6')   // b → 6
+        .replace(/[t7]/g, '7')   // t → 7
+        .replace(/[B8]/g, '8')   // B → 8
+        // 単位記号の統一
+        .replace(/m\/s²/g, 'm/s^2')
+        .replace(/m\/s2/g, 'm/s^2')
+        .replace(/ms²/g, 'm/s^2')
+        .replace(/ms2/g, 'm/s^2')
+        .replace(/kg・m\/s²/g, 'kg*m/s^2')
+        .replace(/kg・m\/s2/g, 'kg*m/s^2')
+        .replace(/n/g, 'N')  // ニュートン
+        .replace(/j/g, 'J')  // ジュール
+        .replace(/w/g, 'W')  // ワット
+        // 句読点除去
+        .replace(/[.,、。]/g, '')
         .trim();
 }
 
