@@ -33,7 +33,8 @@ const ADMIN_PASSWORD = 'physics2024';
 
 // OCR API設定（最高精度を得るために設定してください）
 // ⚠️ 注意: APIキーは公開されますが、教育用途なので問題ありません
-const CLAUDE_API_KEY = prompt('Claude APIキーを入力してください:') || 'YOUR_CLAUDE_API_KEY_HERE';     // Claude API キー（最高精度95%）
+// Claude API キー（直接埋め込み - 教育用途のため）
+const CLAUDE_API_KEY = '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';
 const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE';     // OpenAI API キー（高精度90%）
 const GOOGLE_CLOUD_API_KEY = 'YOUR_API_KEY_HERE';      // Google Cloud Vision API キー（中精度）
 
