@@ -16,6 +16,7 @@ window.onload = function() {
     console.log('🚀 物理クイズシステム開始（Claude専用）');
     loadQuestions();
     initCanvas();
+    setupDragAndDrop();
 };
 
 // ========== ログイン機能 ==========
@@ -72,6 +73,10 @@ function backToLogin() {
 
 // ========== 管理者機能 ==========
 
+function selectFile() {
+    document.getElementById('fileInput').click();
+}
+
 function handleFileSelect(event) {
     const files = event.target.files;
     for (let file of files) {
@@ -81,6 +86,38 @@ function handleFileSelect(event) {
         };
         reader.readAsDataURL(file);
     }
+}
+
+// ドラッグ&ドロップ機能
+function setupDragAndDrop() {
+    const uploadArea = document.getElementById('uploadArea');
+    if (!uploadArea) return;
+    
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.style.backgroundColor = '#f0f0f0';
+    });
+    
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        uploadArea.style.backgroundColor = '';
+    });
+    
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.style.backgroundColor = '';
+        
+        const files = e.dataTransfer.files;
+        for (let file of files) {
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    addQuestion(e.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    });
 }
 
 function addQuestion(imageData) {
@@ -95,6 +132,8 @@ function addQuestion(imageData) {
 
 function renderQuestionList() {
     const container = document.getElementById('questionList');
+    if (!container) return;
+    
     container.innerHTML = questions.map((q, index) => `
         <div class="question-item">
             <h3>問題 ${index + 1}</h3>
