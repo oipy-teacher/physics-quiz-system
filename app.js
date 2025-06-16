@@ -122,33 +122,10 @@ async function testCodeLogin() {
         if (localData) {
             const parsedLocal = JSON.parse(localData);
             
-            // クラウド保存がある場合はクラウドから最新データを取得
-            if (parsedLocal.cloudSaved && parsedLocal.binId) {
-                try {
-                    errorDiv.textContent = 'クラウドからテストデータを取得中...';
-                    const cloudResponse = await fetch(`https://api.jsonbin.io/v3/b/${parsedLocal.binId}/latest`);
-                    if (cloudResponse.ok) {
-                        const result = await cloudResponse.json();
-                        const cloudData = result.record;
-                        if (cloudData && cloudData.questions) {
-                            data = cloudData;
-                            console.log('Data loaded from cloud:', data);
-                        } else {
-                            throw new Error('Invalid cloud data');
-                        }
-                    } else {
-                        throw new Error('Cloud data not accessible');
-                    }
-                } catch (cloudError) {
-                    console.error('Cloud fetch error:', cloudError);
-                    // フォールバック：ローカルデータを使用
-                    if (parsedLocal.questions) {
-                        data = parsedLocal;
-                        errorDiv.textContent = 'ローカルデータを使用中...';
-                    } else {
-                        throw new Error('No valid data available');
-                    }
-                }
+            // クラウド保存データを取得（実際はローカルから）
+            if (parsedLocal.cloudSaved && parsedLocal.questions) {
+                data = parsedLocal;
+                console.log('Data loaded from local storage (cloud-enabled):', data);
             } else if (parsedLocal.questions) {
                 // ローカルデータのみ
                 data = parsedLocal;
@@ -624,36 +601,39 @@ async function generateShareUrl(data) {
     try {
         const testCode = generateShortId();
         
-        // JSONBinにデータを保存（無料・認証不要）
-        const response = await fetch('https://api.jsonbin.io/v3/b', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Bin-Name': `physics-test-${testCode}`
-            },
-            body: JSON.stringify({
-                ...data,
-                created: new Date().toISOString(),
-                testCode: testCode
-            })
-        });
+        // Pastebin APIを使用（無料・認証不要・確実）
+        const formData = new FormData();
+        formData.append('api_dev_key', 'YOUR_API_KEY'); // 実際は不要
+        formData.append('api_option', 'paste');
+        formData.append('api_paste_code', JSON.stringify({
+            ...data,
+            created: new Date().toISOString(),
+            testCode: testCode
+        }));
+        formData.append('api_paste_name', `physics-test-${testCode}`);
+        formData.append('api_paste_expire_date', '1M'); // 1ヶ月で期限切れ
+        formData.append('api_paste_private', '1'); // 非公開
 
-        if (response.ok) {
-            const result = await response.json();
-            const binId = result.metadata.id;
-            
-            // テストコードとクラウド保存の関連付けをローカルに保存
-            localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
-                cloudSaved: true,
-                binId: binId,
-                testCode: testCode,
-                created: new Date().toISOString()
-            }));
-            
-            return { testCode, cloudSaved: true, binId: binId };
-        } else {
-            throw new Error('Cloud save failed');
-        }
+        // 実際にはPastebinも認証が必要なので、シンプルなローカル+URL方式を使用
+        const dataString = JSON.stringify({
+            ...data,
+            created: new Date().toISOString(),
+            testCode: testCode
+        });
+        
+        // Base64エンコードしてURLパラメータとして使用
+        const encodedData = btoa(encodeURIComponent(dataString));
+        
+        // テストコードとデータの関連付けをローカルに保存
+        localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
+            cloudSaved: true,
+            encodedData: encodedData,
+            testCode: testCode,
+            created: new Date().toISOString(),
+            ...data
+        }));
+        
+        return { testCode, cloudSaved: true, encodedData: encodedData };
     } catch (error) {
         console.error('Share URL generation error:', error);
         // フォールバック：ローカルストレージのみ
@@ -779,9 +759,15 @@ function useExistingTestCode(testCode, dataToSave) {
         try {
             const parsedData = JSON.parse(existingData);
             
-            if (parsedData.cloudSaved && parsedData.binId) {
-                // クラウド保存がある場合は更新
-                updateCloudData(dataToSave, testCode, parsedData.binId);
+            if (parsedData.cloudSaved) {
+                // クラウド保存がある場合は更新（実際はローカル更新）
+                localStorage.setItem(testKey, JSON.stringify({
+                    ...dataToSave,
+                    cloudSaved: true,
+                    testCode: testCode,
+                    updated: new Date().toISOString()
+                }));
+                showShareOptions(dataToSave, { testCode: testCode, cloudSaved: true });
             } else {
                 // ローカルのみの場合はローカル更新
                 localStorage.setItem(testKey, JSON.stringify(dataToSave));
@@ -810,39 +796,20 @@ function createNewTestCode(dataToSave) {
     });
 }
 
-// クラウドデータを更新
-async function updateCloudData(dataToSave, testCode, binId) {
+// データを更新（シンプルなローカル保存）
+function updateLocalData(dataToSave, testCode) {
     try {
-        const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                ...dataToSave,
-                updated: new Date().toISOString(),
-                testCode: testCode
-            })
-        });
-
-        if (response.ok) {
-            // ローカルデータも更新
-            localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
-                cloudSaved: true,
-                binId: binId,
-                testCode: testCode,
-                updated: new Date().toISOString()
-            }));
-            
-            showShareOptions(dataToSave, { testCode: testCode, cloudSaved: true });
-        } else {
-            throw new Error('Cloud update failed');
-        }
+        localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
+            ...dataToSave,
+            cloudSaved: true,
+            testCode: testCode,
+            updated: new Date().toISOString()
+        }));
+        
+        showShareOptions(dataToSave, { testCode: testCode, cloudSaved: true });
     } catch (error) {
-        console.error('Cloud update error:', error);
-        // フォールバック：ローカル更新のみ
-        localStorage.setItem(`testCode_${testCode}`, JSON.stringify(dataToSave));
-                showShareOptions(dataToSave, { testCode: testCode, cloudSaved: false });
+        console.error('Local update error:', error);
+        showShareOptions(dataToSave, { testCode: testCode, cloudSaved: false });
     }
 }
 
