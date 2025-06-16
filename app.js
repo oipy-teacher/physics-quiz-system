@@ -31,22 +31,17 @@ let gradingResults = [];
 // ========== 設定 ==========
 const ADMIN_PASSWORD = 'physics2024';
 
-// OCR API設定（最高精度を得るために設定してください）
-// 設定方法：
-// 1. 各サービスでAPIキーを取得
-// 2. 下記の 'YOUR_XXX_API_KEY_HERE' を実際のAPIキーに置き換え
-// 3. 例: const CLAUDE_API_KEY = 'sk-ant-api03-abc123...';
-
-// APIキーはconfig.jsから読み込み（セキュリティのため）
-const CLAUDE_API_KEY = window.CLAUDE_API_KEY || 'YOUR_CLAUDE_API_KEY_HERE';     // Claude API キー（最高精度95%）
-const OPENAI_API_KEY = window.OPENAI_API_KEY || 'YOUR_OPENAI_API_KEY_HERE';     // OpenAI API キー（高精度90%）
-const GOOGLE_CLOUD_API_KEY = window.GOOGLE_CLOUD_API_KEY || 'YOUR_API_KEY_HERE';      // Google Cloud Vision API キー（中精度）
+// OCR API設定（GitHub Actionsで環境変数から注入）
+// 本番環境では自動的に設定されます
+const CLAUDE_API_KEY = '{{CLAUDE_API_KEY}}' || 'YOUR_CLAUDE_API_KEY_HERE';     // Claude API キー（最高精度95%）
+const OPENAI_API_KEY = '{{OPENAI_API_KEY}}' || 'YOUR_OPENAI_API_KEY_HERE';     // OpenAI API キー（高精度90%）
+const GOOGLE_CLOUD_API_KEY = '{{GOOGLE_CLOUD_API_KEY}}' || 'YOUR_API_KEY_HERE';      // Google Cloud Vision API キー（中精度）
 
 // API設定状況を表示
 console.log('🔧 OCR API設定状況:');
-console.log('Claude API:', CLAUDE_API_KEY !== 'YOUR_CLAUDE_API_KEY_HERE' ? '✅ 設定済み（最高精度）' : '❌ 未設定');
-console.log('OpenAI API:', OPENAI_API_KEY !== 'YOUR_OPENAI_API_KEY_HERE' ? '✅ 設定済み（高精度）' : '❌ 未設定');
-console.log('Google Cloud API:', GOOGLE_CLOUD_API_KEY !== 'YOUR_API_KEY_HERE' ? '✅ 設定済み（中精度）' : '❌ 未設定');
+console.log('Claude API:', CLAUDE_API_KEY !== 'YOUR_CLAUDE_API_KEY_HERE' && CLAUDE_API_KEY !== '{{CLAUDE_API_KEY}}' ? '✅ 設定済み（最高精度）' : '❌ 未設定');
+console.log('OpenAI API:', OPENAI_API_KEY !== 'YOUR_OPENAI_API_KEY_HERE' && OPENAI_API_KEY !== '{{OPENAI_API_KEY}}' ? '✅ 設定済み（高精度）' : '❌ 未設定');
+console.log('Google Cloud API:', GOOGLE_CLOUD_API_KEY !== 'YOUR_API_KEY_HERE' && GOOGLE_CLOUD_API_KEY !== '{{GOOGLE_CLOUD_API_KEY}}' ? '✅ 設定済み（中精度）' : '❌ 未設定');
 
 // 初期化
 window.onload = function() {
