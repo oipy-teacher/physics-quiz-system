@@ -115,26 +115,36 @@ async function testCodeLogin() {
     try {
         let data = null;
         
-        // まずローカルストレージから確認
+        // まずローカルストレージから確認（同一端末の場合）
         const testKey = `testCode_${testCode}`;
         const localData = localStorage.getItem(testKey);
         
         if (localData) {
             const parsedLocal = JSON.parse(localData);
             
-            // クラウド保存データを取得（実際はローカルから）
-            if (parsedLocal.cloudSaved && parsedLocal.questions) {
+            if (parsedLocal.questions) {
                 data = parsedLocal;
-                console.log('Data loaded from local storage (cloud-enabled):', data);
-            } else if (parsedLocal.questions) {
-                // ローカルデータのみ
-                data = parsedLocal;
+                console.log('Data loaded from local storage:', data);
+            } else if (parsedLocal.dataUrl) {
+                // データURLがある場合は、そのURLにリダイレクト
+                errorDiv.textContent = 'テストページにリダイレクト中...';
+                window.location.href = parsedLocal.dataUrl;
+                return;
             }
         }
         
-        // データが見つからない場合は、まず教員にテスト作成を促す
+        // データが見つからない場合の対処
         if (!data) {
-            errorDiv.textContent = 'テストコードが見つかりません。教員がテストを作成してからアクセスしてください。';
+            errorDiv.innerHTML = `
+                <div style="text-align: left;">
+                    <strong>テストコードが見つかりません。</strong><br><br>
+                    <strong>解決方法：</strong><br>
+                    1. 教員から受け取ったQRコードをスキャンしてください<br>
+                    2. または、教員から受け取った完全なURLにアクセスしてください<br>
+                    3. テストコードのみでは別端末からアクセスできません<br><br>
+                    <em>※ QRコードまたは完全URLにテストデータが含まれています</em>
+                </div>
+            `;
             errorDiv.style.display = 'block';
             return;
         }
@@ -884,15 +894,16 @@ function showShareOptions(data, shareResult) {
             
             <div style="margin-top: 30px; padding: 15px; background: #e8f4fd; border-radius: 8px; font-size: 14px; text-align: left;">
                 <strong>📋 使い方：</strong><br>
-                <strong>方法1（テストコード）：</strong><br>
-                1. 上のテストコードを生徒に伝える<br>
-                2. 生徒は任意の端末で同じURL（${window.location.origin + window.location.pathname}）にアクセス<br>
-                3. 「テストコードでログイン」を選択してコードを入力<br><br>
-                
-                <strong>方法2（QRコード）：</strong><br>
+                <strong>🎯 推奨方法（QRコード）：</strong><br>
                 1. QRコードを保存して生徒に共有<br>
                 2. 生徒はスマホでQRコードをスキャン<br>
-                3. 自動的にテストページが開く<br><br>
+                3. 自動的にテストページが開く<br>
+                <em>※ どの端末からでもアクセス可能</em><br><br>
+                
+                <strong>⚠️ テストコード方式の制限：</strong><br>
+                • テストコードは同一端末でのみ有効<br>
+                • 別端末からはQRコードまたは完全URLが必要<br>
+                • クロスデバイス利用にはQRコードを推奨<br><br>
                 
                 ${isCloudBased ? 
                     '<strong>✅ クラウド保存：</strong> テストデータはクラウドに保存されているので、どの端末からでもアクセス可能です。' : 
