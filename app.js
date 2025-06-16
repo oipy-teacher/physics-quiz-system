@@ -32,6 +32,10 @@ let gradingResults = [];
 const ADMIN_PASSWORD = 'physics2024';
 
 // Google Cloud Vision API設定（実際の運用では環境変数で管理）
+// Google Vision APIの使用方法：
+// 1. https://console.cloud.google.com/ にアクセス
+// 2. 新プロジェクト作成 → Vision API有効化
+// 3. APIキー生成 → 下記に設定
 const GOOGLE_CLOUD_API_KEY = 'YOUR_API_KEY_HERE'; // 実際のAPIキーに置き換え
 
 // 初期化
@@ -2766,3 +2770,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 初期画面設定
     showScreen('login');
 });
+
+// セキュリティ重要！！！
+// 本番環境では以下の方法でAPIキーを管理：
+// 1. 環境変数での管理
+// 2. サーバーサイドプロキシ経由
+// 3. ドメイン制限付きAPIキー
+// 4. 絶対にGitHubにAPIキーをコミットしない
+
+// 開発用の安全な設定（ローカルストレージ使用）
+function loadSecureApiKey(keyName) {
+    // ローカルストレージから読み込み（ブラウザ内でのみ管理）
+    return localStorage.getItem(keyName);
+}
