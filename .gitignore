@@ -1,7 +1,0 @@
-# APIキー設定ファイル（セキュリティのため除外）
-config.js
-
-# その他の除外ファイル
-.DS_Store
-*.log
-node_modules/ 
