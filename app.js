@@ -1898,9 +1898,9 @@ async function preprocessImageForOCR(imageDataUrl) {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             
-            // 画像サイズを2倍に拡大（解像度向上）
-            canvas.width = img.width * 2;
-            canvas.height = img.height * 2;
+            // 画像サイズを3倍に拡大（解像度向上）
+            canvas.width = img.width * 3;
+            canvas.height = img.height * 3;
             
             // 背景を白に設定
             ctx.fillStyle = 'white';
@@ -1986,7 +1986,7 @@ async function performAdvancedPatternMatching(ocrResult, correctPatterns, questi
     }
     
     // 閾値を設定（手書きの場合は緩く、テキスト入力の場合は厳密に）
-    const threshold = ocrResult.confidence === 1.0 ? 0.8 : 0.5; // テキスト入力は厳しく、手書きは緩く
+    const threshold = ocrResult.confidence === 1.0 ? 0.8 : 0.4; // テキスト入力は厳しく、手書きは更に緩く
     const isCorrect = highestScore >= threshold;
     
     console.log(`Best match: "${matchedPattern}" with score ${highestScore}`);
@@ -2083,15 +2083,20 @@ function normalizeText(text) {
         .replace(/³/g, '^3')
         .replace(/√/g, 'sqrt')
         .replace(/π/g, 'pi')
-        // よくある誤認識の修正
-        .replace(/[oO]/g, '0')   // o, O → 0
-        .replace(/[il1I]/g, '1') // i, l, I → 1
-        .replace(/[s5S]/g, '5')  // s, S → 5
-        .replace(/[g9]/g, '9')   // g → 9
-        .replace(/[z2Z]/g, '2')  // z, Z → 2
-        .replace(/[b6]/g, '6')   // b → 6
-        .replace(/[t7]/g, '7')   // t → 7
-        .replace(/[B8]/g, '8')   // B → 8
+        // よくある誤認識の修正（手書き数字対応強化）
+        .replace(/[oOQ]/g, '0')     // o, O, Q → 0
+        .replace(/[il1I|]/g, '1')   // i, l, I, | → 1
+        .replace(/[z2Z]/g, '2')     // z, Z → 2
+        .replace(/[E3]/g, '3')      // E → 3
+        .replace(/[A4]/g, '4')      // A → 4
+        .replace(/[s5S]/g, '5')     // s, S → 5
+        .replace(/[b6G]/g, '6')     // b, G → 6
+        .replace(/[t7T]/g, '7')     // t, T → 7
+        .replace(/[B8]/g, '8')      // B → 8
+        .replace(/[g9qP]/g, '9')    // g, q, P → 9
+        // 小数点の認識改善
+        .replace(/[,，]/g, '.')     // カンマ → ピリオド
+        .replace(/[。]/g, '.')      // 句点 → ピリオド
         // 単位記号の統一
         .replace(/m\/s²/g, 'm/s^2')
         .replace(/m\/s2/g, 'm/s^2')
@@ -2163,36 +2168,103 @@ function calculatePartialMatchScore(recognized, pattern) {
     return maxCommonLength / Math.max(recognized.length, pattern.length);
 }
 
-// 数値マッチスコア計算
+// 数値マッチスコア計算（複数値対応強化版）
 function calculateNumericMatchScore(recognized, pattern) {
+    // より柔軟な数値抽出（カンマ区切りも対応）
     const recognizedNumbers = recognized.match(/\d+\.?\d*/g) || [];
     const patternNumbers = pattern.match(/\d+\.?\d*/g) || [];
+    
+    console.log('Numeric matching:', { recognized, pattern, recognizedNumbers, patternNumbers });
     
     if (recognizedNumbers.length === 0 && patternNumbers.length === 0) {
         return 0.5; // 数値がない場合は中立
     }
     
-    if (recognizedNumbers.length !== patternNumbers.length) {
-        return 0.3; // 数値の個数が違う場合は低スコア
+    if (recognizedNumbers.length === 0 || patternNumbers.length === 0) {
+        return 0.1; // 片方に数値がない場合は低スコア
     }
     
+    // 複数値の場合：順序を考慮しない柔軟マッチング
+    if (patternNumbers.length > 1) {
+        return calculateMultiValueMatch(recognizedNumbers, patternNumbers);
+    }
+    
+    // 単一値の場合：従来の処理
     let totalScore = 0;
-    for (let i = 0; i < recognizedNumbers.length; i++) {
-        const recNum = parseFloat(recognizedNumbers[i]);
-        const patNum = parseFloat(patternNumbers[i]);
+    const maxLength = Math.max(recognizedNumbers.length, patternNumbers.length);
+    
+    for (let i = 0; i < maxLength; i++) {
+        const recNum = i < recognizedNumbers.length ? parseFloat(recognizedNumbers[i]) : null;
+        const patNum = i < patternNumbers.length ? parseFloat(patternNumbers[i]) : null;
+        
+        if (recNum === null || patNum === null) {
+            continue; // スキップ
+        }
         
         if (recNum === patNum) {
             totalScore += 1.0;
         } else {
-            // 数値の近似度を計算
+            // 数値の近似度を計算（物理では有効数字を考慮）
             const diff = Math.abs(recNum - patNum);
-            const avg = (recNum + patNum) / 2;
-            const similarity = Math.max(0, 1 - (diff / Math.max(avg, 1)));
-            totalScore += similarity;
+            const tolerance = Math.max(patNum * 0.05, 0.1); // 5%の誤差または0.1の絶対誤差
+            
+            if (diff <= tolerance) {
+                totalScore += 0.9; // 許容範囲内
+            } else {
+                const similarity = Math.max(0, 1 - (diff / Math.max(Math.abs(patNum), 1)));
+                totalScore += similarity * 0.7;
+            }
         }
     }
     
-    return totalScore / recognizedNumbers.length;
+    return totalScore / maxLength;
+}
+
+// 複数値マッチング（順序を考慮しない）
+function calculateMultiValueMatch(recognizedNumbers, patternNumbers) {
+    const recNums = recognizedNumbers.map(n => parseFloat(n));
+    const patNums = patternNumbers.map(n => parseFloat(n));
+    
+    console.log('Multi-value matching:', { recNums, patNums });
+    
+    let totalScore = 0;
+    let matchedCount = 0;
+    
+    // 各正解値に対して最も近い認識値を探す
+    for (const patNum of patNums) {
+        let bestMatch = 0;
+        
+        for (const recNum of recNums) {
+            if (recNum === patNum) {
+                bestMatch = 1.0;
+                break;
+            } else {
+                // 近似マッチング
+                const diff = Math.abs(recNum - patNum);
+                const tolerance = Math.max(patNum * 0.1, 0.1); // 10%の誤差または0.1の絶対誤差
+                
+                if (diff <= tolerance) {
+                    bestMatch = Math.max(bestMatch, 0.9);
+                } else {
+                    const similarity = Math.max(0, 1 - (diff / Math.max(Math.abs(patNum), 1)));
+                    bestMatch = Math.max(bestMatch, similarity * 0.6);
+                }
+            }
+        }
+        
+        totalScore += bestMatch;
+        matchedCount++;
+    }
+    
+    // ボーナス：認識した数値の個数が正解と一致する場合
+    if (recNums.length === patNums.length) {
+        totalScore *= 1.1; // 10%ボーナス
+    }
+    
+    const finalScore = Math.min(1.0, totalScore / matchedCount);
+    console.log('Multi-value match score:', finalScore);
+    
+    return finalScore;
 }
 
 // 音韻類似度計算
