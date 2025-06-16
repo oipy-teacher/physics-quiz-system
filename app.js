@@ -614,7 +614,7 @@ async function generateShareUrl(data) {
         formData.append('api_paste_expire_date', '1M'); // 1ヶ月で期限切れ
         formData.append('api_paste_private', '1'); // 非公開
 
-        // 実際にはPastebinも認証が必要なので、シンプルなローカル+URL方式を使用
+        // データをBase64エンコードしてURLに埋め込み（真のクロスデバイス対応）
         const dataString = JSON.stringify({
             ...data,
             created: new Date().toISOString(),
@@ -624,16 +624,25 @@ async function generateShareUrl(data) {
         // Base64エンコードしてURLパラメータとして使用
         const encodedData = btoa(encodeURIComponent(dataString));
         
-        // テストコードとデータの関連付けをローカルに保存
+        // QRコードとURLに埋め込むため、データサイズを確認
+        const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
+        
+        if (dataUrl.length > 2000) {
+            // URLが長すぎる場合は圧縮を試行
+            console.warn('Data URL is too long, may cause issues with QR codes');
+        }
+        
+        // テストコードとデータの関連付けをローカルに保存（フォールバック用）
         localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
             cloudSaved: true,
             encodedData: encodedData,
             testCode: testCode,
             created: new Date().toISOString(),
+            dataUrl: dataUrl,
             ...data
         }));
         
-        return { testCode, cloudSaved: true, encodedData: encodedData };
+        return { testCode, cloudSaved: true, encodedData: encodedData, dataUrl: dataUrl };
     } catch (error) {
         console.error('Share URL generation error:', error);
         // フォールバック：ローカルストレージのみ
@@ -919,15 +928,37 @@ function copyTestCode(code) {
     });
 }
 
-// QRコード生成
+// QRコード生成（データ埋め込み版）
 function generateQRCode(testCode) {
     const qrContainer = document.getElementById('qrcode');
     if (!qrContainer) return;
     
-    const url = `${window.location.origin + window.location.pathname}?code=${testCode}`;
+    // ローカルストレージからデータURLを取得
+    const testKey = `testCode_${testCode}`;
+    const testData = localStorage.getItem(testKey);
     
-    // シンプルなQRコード生成（Google Charts API使用）
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`;
+    let qrUrl;
+    if (testData) {
+        try {
+            const parsedData = JSON.parse(testData);
+            if (parsedData.dataUrl) {
+                // データ埋め込みURLを使用
+                qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(parsedData.dataUrl)}`;
+            } else {
+                // フォールバック：テストコード方式
+                const fallbackUrl = `${window.location.origin + window.location.pathname}?code=${testCode}`;
+                qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fallbackUrl)}`;
+            }
+        } catch (e) {
+            // エラーの場合はテストコード方式
+            const fallbackUrl = `${window.location.origin + window.location.pathname}?code=${testCode}`;
+            qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fallbackUrl)}`;
+        }
+    } else {
+        // データが見つからない場合はテストコード方式
+        const fallbackUrl = `${window.location.origin + window.location.pathname}?code=${testCode}`;
+        qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fallbackUrl)}`;
+    }
     
     qrContainer.innerHTML = `<img src="${qrUrl}" alt="QRコード" style="border: 1px solid #ddd; border-radius: 8px;">`;
 }
@@ -1075,34 +1106,40 @@ async function loadSavedQuestions() {
     }
 }
 
-// URLパラメータからデータを読み込み
+// URLパラメータからデータを読み込み（真のクロスデバイス対応）
 function loadQuestionsFromUrl() {
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const testCode = urlParams.get('code');
         const shareId = urlParams.get('id');
-        const dataParam = urlParams.get('data'); // 旧形式との互換性
+        const dataParam = urlParams.get('data'); // データ埋め込み形式
         
         let data = null;
         
-        if (testCode) {
-            // 新形式：テストコード
+        if (dataParam) {
+            // 最新形式：データ埋め込み（真のクロスデバイス）
+            try {
+                const decodedData = decodeURIComponent(atob(dataParam));
+                data = JSON.parse(decodedData);
+                console.log('Data loaded from URL parameter (cross-device):', data);
+            } catch (decodeError) {
+                console.error('Failed to decode URL data:', decodeError);
+            }
+        } else if (testCode) {
+            // フォールバック：テストコード（ローカルストレージ依存）
             const testKey = `testCode_${testCode}`;
             const testData = localStorage.getItem(testKey);
             if (testData) {
                 data = JSON.parse(testData);
+                console.log('Data loaded from localStorage (same device):', data);
             }
         } else if (shareId) {
-            // 中間形式：短縮ID
+            // 旧形式：短縮ID
             const shareKey = `physicsQuizShare_${shareId}`;
             const shareData = localStorage.getItem(shareKey);
             if (shareData) {
                 data = JSON.parse(shareData);
             }
-        } else if (dataParam) {
-            // 旧形式：長いURL（互換性のため）
-            const decodedData = decodeURIComponent(atob(dataParam));
-            data = JSON.parse(decodedData);
         }
         
         if (data && data.questions && data.questions.length > 0) {
