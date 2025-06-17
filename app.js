@@ -2025,19 +2025,29 @@ function nextQuestion() {
 }
 
 async function submitTest() {
+    console.log('=== submitTest called ===');
+    console.log('currentStudentId:', currentStudentId);
+    console.log('currentTestCode:', currentTestCode);
+    console.log('userAnswers:', userAnswers);
+    
     if (confirm('テストを提出しますか？提出後は修正できません。')) {
-        // 最後の回答を保存
-        saveCurrentAnswer();
-        
-        // タイマー停止
-        clearInterval(timerInterval);
-        
-        // 解答を保存（統一された保存関数を使用）
-        saveSubmissionResult();
-        
-        // 完了画面表示
-        showScreen('result');
-        showSubmissionComplete();
+        try {
+            // 最後の回答を保存
+            saveCurrentAnswer();
+            
+            // タイマー停止
+            clearInterval(timerInterval);
+            
+            // 解答を保存（統一された保存関数を使用）
+            await saveSubmissionResult();
+            
+            // 完了画面表示
+            showScreen('result');
+            showSubmissionComplete();
+        } catch (error) {
+            console.error('Submit test error:', error);
+            alert('提出処理でエラーが発生しました: ' + error.message);
+        }
     }
 }
 
@@ -2189,14 +2199,22 @@ async function saveSubmissionResult() {
         
         const finalStudentId = currentStudentId || studentId;
         const finalTestCode = currentTestCode || 'LOCAL';
-        const finalAnswers = userAnswers || (testData ? testData.answers : []);
-        const finalQuestions = currentTestData ? currentTestData.questions : questions;
+        const finalAnswers = userAnswers || (testData ? testData.answers : []) || [];
+        const finalQuestions = currentTestData ? currentTestData.questions : questions || [];
         const finalStartTime = testStartTime || startTime || new Date();
+        
+        console.log('Final values for submission:');
+        console.log('finalStudentId:', finalStudentId);
+        console.log('finalTestCode:', finalTestCode);
+        console.log('finalAnswers count:', finalAnswers.length);
+        console.log('finalQuestions count:', finalQuestions.length);
         
         if (!finalStudentId) {
             console.error('No student ID available');
+            console.error('currentStudentId:', currentStudentId);
+            console.error('studentId:', typeof studentId !== 'undefined' ? studentId : 'undefined');
             alert('学籍番号が取得できませんでした。再度ログインしてください。');
-            return;
+            throw new Error('No student ID available');
         }
         
         const submissionData = {
