@@ -927,7 +927,7 @@ function showTestCodeOptions(dataToSave, existingCodes) {
         display: flex;
         justify-content: center;
         align-items: center;
-        z-index: 2000;
+        z-index: 9999;
     `;
     
     const existingCodesHtml = existingCodes.map(code => `
@@ -956,7 +956,7 @@ function showTestCodeOptions(dataToSave, existingCodes) {
                     🆕 新しいコードを作成
                 </button>
                 <button onclick="closeTestCodeModal()" 
-                        style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer;">
+                        style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer; position: relative; z-index: 10000;">
                     キャンセル
                 </button>
             </div>
@@ -964,6 +964,14 @@ function showTestCodeOptions(dataToSave, existingCodes) {
     `;
     
     modal.id = 'testCodeModal';
+    
+    // 背景クリックで閉じる
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeTestCodeModal();
+        }
+    });
+    
     document.body.appendChild(modal);
 }
 
@@ -1056,7 +1064,7 @@ function showShareOptions(data, shareResult) {
         display: flex;
         justify-content: center;
         align-items: center;
-        z-index: 2000;
+        z-index: 9999;
     `;
     
     const testCode = shareResult.testCode;
@@ -2147,7 +2155,7 @@ function showWarning() {
             } else if (isDevToolsOpen) {
                 message.textContent = '開発者ツールの使用は禁止されています。';
                 isDevToolsOpen = false;
-            } else {
+                } else {
                 message.textContent = '不正な操作が検知されました。';
             }
         }
@@ -2260,7 +2268,7 @@ async function saveSubmissionResult() {
             try {
                 await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
                 firebaseMessage = '\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能';
-    } catch (error) {
+        } catch (error) {
                 console.error('Firebase upload failed:', error);
                 firebaseMessage = '\n\n⚠️ Firebase Storageへのアップロードに失敗\nローカル保存は完了しています';
             }
@@ -2621,7 +2629,7 @@ function exportToExcel() {
                         `"${answerText.replace(/"/g, '""')}"`, // CSVエスケープ
                         `"${question?.patterns?.join(', ') || '設定なし'}"`
                     );
-                } else {
+        } else {
                     row.push('未回答', '', '');
                 }
             }
@@ -2702,9 +2710,9 @@ ${submission.answers.map((answer, index) => {
                     studentFolder.file(`問題${index + 1}_手書き解答.png`, imageData, {base64: true});
                     hasHandwritingData = true;
                 }
-            });
         });
-        
+    });
+    
         if (!hasHandwritingData) {
             showAdminError('手書きの解答データがありません。');
         return;
@@ -2865,7 +2873,7 @@ async function showTestCodeSelectionModal(testCodeRefs) {
                                 👥 ${data.studentCount}名の学生 | 📄 ${data.fileCount}個のファイル
                             </p>
                             <small style="color: #999;">クリックしてZIPダウンロード</small>
-                        </div>
+                </div>
                     `).join('')}
                 </div>
                 
@@ -2873,9 +2881,9 @@ async function showTestCodeSelectionModal(testCodeRefs) {
                     <button onclick="closeTestCodeSelectionModal()" style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px;">
                         キャンセル
                     </button>
-                </div>
-            </div>
-        </div>
+                            </div>
+                            </div>
+                        </div>
     `;
     
     document.body.insertAdjacentHTML('beforeend', modalHtml);
@@ -2974,7 +2982,7 @@ async function selectTestCodeForDownload(testCode) {
                         showAdminSuccess(`ダウンロード中... ${processedFiles}/${totalFiles} ファイル (${Math.round(processedFiles/totalFiles*100)}%)`);
                     }
                     
-                } catch (error) {
+    } catch (error) {
                     console.error(`Failed to download ${fileRef.fullPath}:`, error);
                     
                     // エラー時も詳細情報を含める
@@ -2995,9 +3003,9 @@ async function selectTestCodeForDownload(testCode) {
         
         if (processedFiles === 0) {
             showAdminError('ダウンロード可能なファイルがありませんでした。');
-            return;
-        }
-        
+        return;
+    }
+    
         // ZIPファイル生成・ダウンロード
         showAdminSuccess('ZIPファイルを生成中...');
         const zipBlob = await zip.generateAsync({
