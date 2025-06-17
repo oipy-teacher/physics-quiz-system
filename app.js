@@ -2762,72 +2762,167 @@ async function downloadFirebaseImages() {
             return;
         }
         
-        let fileCount = 0;
-        let testCodeList = [];
-        
-        // 各テストコードごとにファイル数を確認
-        for (const testCodeRef of testCodes.prefixes) {
-            const testCode = testCodeRef.name;
-            const students = await testCodeRef.listAll();
-            
-            let studentCount = 0;
-            for (const studentRef of students.prefixes) {
-                const files = await studentRef.listAll();
-                fileCount += files.items.length;
-                studentCount++;
-            }
-            
-            if (studentCount > 0) {
-                testCodeList.push(`- ${testCode}: ${studentCount}名の学生, ${Math.floor(fileCount/testCodeList.length || 1)}ファイル`);
-            }
-        }
-        
-        // Firebase Console直接ダウンロードを案内
-        const message = `
-🔥 Firebase上に提出データが見つかりました！
-
-📊 **提出状況:**
-${testCodeList.join('\n')}
-
-💡 **推奨ダウンロード方法:**
-
-**1. Firebase Console から直接ダウンロード**
-   • https://console.firebase.google.com/project/physics-quiz-app/storage
-   • 左メニュー「Storage」→「ファイル」
-   • submissions フォルダを選択
-   • テストコード別フォルダ → 学籍番号別フォルダ
-   • 一括選択してダウンロード
-
-**2. フォルダ構造:**
-   submissions/
-   ├── テストコード1/
-   │   ├── 1234/
-   │   │   ├── question1.png
-   │   │   ├── question2.png
-   │   │   └── metadata.json (学生情報・回答詳細)
-   │   └── 5678/
-   └── テストコード2/
-
-**3. metadata.json には以下が含まれます:**
-   • 学籍番号、テストコード
-   • 提出日時、回答時間
-   • テキスト回答内容
-   • 違反回数、デバイス情報
-
-この方法により、テストコード別・学生別に整理された
-すべての画像とデータを効率的に取得できます。
-        `;
-        
-        showAdminSuccess(message);
-        
-        // Firebase Consoleへのリンクを開く
-        if (confirm('Firebase Consoleを開きますか？')) {
-            window.open('https://console.firebase.google.com/project/physics-quiz-app/storage', '_blank');
-        }
+        // テストコード選択UI表示
+        showTestCodeSelectionModal(testCodes.prefixes);
         
     } catch (error) {
         console.error('Firebase check error:', error);
         showAdminError('Firebase接続エラー: ' + error.message);
+    }
+}
+
+// テストコード選択モーダル表示
+async function showTestCodeSelectionModal(testCodeRefs) {
+    // テストコード情報を収集
+    let testCodeData = [];
+    
+    for (const testCodeRef of testCodeRefs) {
+        const testCode = testCodeRef.name;
+        const students = await testCodeRef.listAll();
+        let totalFiles = 0;
+        
+        for (const studentRef of students.prefixes) {
+            const files = await studentRef.listAll();
+            totalFiles += files.items.length;
+        }
+        
+        testCodeData.push({
+            code: testCode,
+            studentCount: students.prefixes.length,
+            fileCount: totalFiles,
+            ref: testCodeRef
+        });
+    }
+    
+    // モーダル表示
+    const modalHtml = `
+        <div id="testCodeSelectionModal" class="modal" style="display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+            <div class="modal-content" style="background: white; padding: 30px; border-radius: 15px; max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto;">
+                <h2 style="margin-top: 0; color: #007aff;">📁 テストコード選択</h2>
+                <p>ダウンロードするテストコードを選択してください：</p>
+                
+                <div class="test-code-list" style="margin: 20px 0;">
+                    ${testCodeData.map(data => `
+                        <div class="test-code-item" style="border: 2px solid #e0e0e0; border-radius: 10px; padding: 15px; margin: 10px 0; cursor: pointer; transition: all 0.3s;" 
+                             onclick="selectTestCodeForDownload('${data.code}')" 
+                             onmouseover="this.style.borderColor='#007aff'; this.style.backgroundColor='#f0f8ff';"
+                             onmouseout="this.style.borderColor='#e0e0e0'; this.style.backgroundColor='white';">
+                            <h3 style="margin: 0 0 10px 0; color: #007aff;">📝 ${data.code}</h3>
+                            <p style="margin: 5px 0; color: #666;">
+                                👥 ${data.studentCount}名の学生 | 📄 ${data.fileCount}個のファイル
+                            </p>
+                            <small style="color: #999;">クリックしてZIPダウンロード</small>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div style="text-align: center; margin-top: 20px;">
+                    <button onclick="closeTestCodeSelectionModal()" style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px;">
+                        キャンセル
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+// テストコード選択でダウンロード実行
+async function selectTestCodeForDownload(testCode) {
+    closeTestCodeSelectionModal();
+    
+    try {
+        showAdminSuccess(`${testCode} のデータをダウンロード中...`);
+        
+        // JSZipライブラリを読み込み
+        await loadJSZip();
+        
+        const zip = new JSZip();
+        const testCodeFolder = zip.folder(testCode);
+        
+        const testCodeRef = firebaseStorage.ref(`submissions/${testCode}`);
+        const students = await testCodeRef.listAll();
+        
+        let processedFiles = 0;
+        let totalFiles = 0;
+        
+        // 総ファイル数を計算
+        for (const studentRef of students.prefixes) {
+            const files = await studentRef.listAll();
+            totalFiles += files.items.length;
+        }
+        
+        // 各学生のファイルをダウンロードしてZIPに追加
+        for (const studentRef of students.prefixes) {
+            const studentId = studentRef.name;
+            const studentFolder = testCodeFolder.folder(`学籍番号_${studentId}`);
+            
+            const files = await studentRef.listAll();
+            
+            for (const fileRef of files.items) {
+                try {
+                    console.log(`Downloading: ${fileRef.fullPath}`);
+                    
+                    // ファイルのダウンロードURLを取得
+                    const downloadURL = await fileRef.getDownloadURL();
+                    
+                    // fetch でファイルをダウンロード
+                    const response = await fetch(downloadURL);
+                    const blob = await response.blob();
+                    
+                    // ZIPに追加
+                    studentFolder.file(fileRef.name, blob);
+                    processedFiles++;
+                    
+                    // 進捗表示
+                    if (processedFiles % 3 === 0 || processedFiles === totalFiles) {
+                        showAdminSuccess(`ダウンロード中... ${processedFiles}/${totalFiles} ファイル (${Math.round(processedFiles/totalFiles*100)}%)`);
+                    }
+                    
+                } catch (error) {
+                    console.error(`Failed to download ${fileRef.fullPath}:`, error);
+                    // エラーファイルは情報として追加
+                    studentFolder.file(`${fileRef.name}_ERROR.txt`, `ダウンロードエラー: ${error.message}`);
+                    processedFiles++;
+                }
+            }
+        }
+        
+        if (processedFiles === 0) {
+            showAdminError('ダウンロード可能なファイルがありませんでした。');
+            return;
+        }
+        
+        // ZIPファイル生成・ダウンロード
+        showAdminSuccess('ZIPファイルを生成中...');
+        const zipBlob = await zip.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 6 }
+        });
+        
+        const now = new Date();
+        const filename = `${testCode}_提出画像_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.zip`;
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(zipBlob);
+        link.download = filename;
+        link.click();
+        
+        showAdminSuccess(`✅ ダウンロード完了！\n📁 ${filename}\n📊 ${processedFiles}ファイルを取得しました`);
+        
+    } catch (error) {
+        console.error('Download error:', error);
+        showAdminError('ダウンロードに失敗しました: ' + error.message);
+    }
+}
+
+// テストコード選択モーダルを閉じる
+function closeTestCodeSelectionModal() {
+    const modal = document.getElementById('testCodeSelectionModal');
+    if (modal) {
+        modal.remove();
     }
 }
 
