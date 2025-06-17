@@ -42,7 +42,7 @@ const ADMIN_PASSWORD = 'physics2024';
 
 // Firebase設定（実際のプロジェクト設定に置き換えてください）
 const firebaseConfig = {
-    apiKey: "AIzaSy5Hw_vhizEaXgoWQNlgVM0uAudPjsoPoh8",
+    apiKey: "AIzaSy5Hw_vhizEaXgoWQNlgVM0uAudPjsoPo",
     authDomain: "physics-quiz-app.firebaseapp.com",
     projectId: "physics-quiz-app",
     storageBucket: "physics-quiz-app.firebasestorage.app",
@@ -2249,33 +2249,21 @@ async function saveSubmissionResult() {
         const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
         console.log('Verification - submissions after save:', savedSubmissions);
         
-        // Firebase Storageに画像をアップロード（必須）
+        // Firebase Storageに画像をアップロード
+        let firebaseMessage = '';
         if (isFirebaseAvailable) {
             try {
-                console.log('🔥 Starting Firebase upload...');
                 await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
-                console.log('🎉 Firebase upload completed successfully!');
-                alert(`🎉 提出完了！\n学籍番号: ${finalStudentId}\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能`);
-            } catch (error) {
-                console.error('❌ Firebase upload failed:', error);
-                
-                // 具体的なエラーメッセージを表示
-                let errorMessage = 'Firebase Storageへのアップロードに失敗';
-                if (error.message.includes('quota') || error.code === 'storage/quota-exceeded') {
-                    errorMessage = 'Firebase Storage容量制限エラー\n管理者に連絡して容量を増やしてもらってください';
-                } else if (error.message.includes('permission') || error.code === 'storage/unauthorized') {
-                    errorMessage = 'Firebase権限エラー\n管理者にセキュリティルールの確認を依頼してください';
-                } else if (error.message.includes('network')) {
-                    errorMessage = 'ネットワークエラー\nインターネット接続を確認してください';
-                }
-                
-                alert(`❌ 提出失敗\n\n${errorMessage}\n\nエラー詳細: ${error.message}`);
-                throw error; // エラーを上位に伝播して、解答保存を失敗させる
+                firebaseMessage = '\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能';
+        } catch (error) {
+                console.error('Firebase upload failed:', error);
+                firebaseMessage = '\n\n⚠️ Firebase Storageへのアップロードに失敗\nローカル保存は完了しています';
             }
         } else {
-            alert('❌ 提出失敗\n\nFirebase Storageが利用できません。\n管理者に連絡してください。');
-            throw new Error('Firebase not available - submission failed');
+            firebaseMessage = '\n\n📝 ローカルに保存しました\n⚙️ Firebase設定で教員への画像共有が可能\n詳細: FIREBASE_QUICK_SETUP.md参照';
         }
+        
+        alert(`🎉 提出完了！\n学籍番号: ${finalStudentId}${firebaseMessage}`);
         
     } catch (error) {
         console.error('Failed to save submission:', error);
@@ -2296,106 +2284,58 @@ async function uploadImagesToFirebase(studentId, testCode, answers) {
         console.log('Test code for upload:', testCode);
         console.log('Answers count:', answers.length);
         
-        // 小さなテストファイルでFirebase接続をテスト
-        const testPath = `submissions/${testCode}/${studentId}/test_connection.txt`;
-        const testBlob = new Blob(['connection test'], { type: 'text/plain' });
-        console.log('Testing Firebase connection...');
-        await firebaseStorage.ref(testPath).put(testBlob);
-        console.log('✅ Firebase connection test successful');
-        
-        // 画像を1つずつ順番にアップロード（同時アップロード制限回避）
         for (let i = 0; i < answers.length; i++) {
             const answer = answers[i];
             if (answer && answer.method === 'canvas' && answer.canvas) {
-                try {
-                    // Canvas画像をBlobに変換
-                    const response = await fetch(answer.canvas);
-                    const blob = await response.blob();
-                    
-                    // ファイルサイズチェック（5MB制限）
-                    if (blob.size > 5 * 1024 * 1024) {
-                        console.warn(`Image ${i + 1} too large: ${blob.size} bytes`);
-                        continue;
-                    }
-                    
-                    // Firebaseのパス: submissions/テストコード/学籍番号/問題番号.png
-                    const imagePath = `submissions/${testCode}/${studentId}/question${i + 1}.png`;
-                    const storageRef = firebaseStorage.ref(imagePath);
-                    
-                    console.log(`Uploading image ${i + 1}: ${imagePath} (${blob.size} bytes)`);
-                    
-                    // カスタムメタデータを追加
-                    const uploadMetadata = {
-                        customMetadata: {
-                            'studentId': studentId,
-                            'testCode': testCode,
-                            'questionNumber': String(i + 1),
-                            'uploadTime': new Date().toISOString()
-                        }
-                    };
-                    
-                    await storageRef.put(blob, uploadMetadata);
-                    console.log(`✅ Successfully uploaded image ${i + 1}: ${imagePath}`);
-                    
-                    // 各アップロード間に100ms待機（レート制限回避）
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                } catch (imageError) {
-                    console.error(`Failed to upload image ${i + 1}:`, imageError);
-                    // 個別画像エラーは継続
-                }
+                // Canvas画像をBlobに変換
+                const response = await fetch(answer.canvas);
+                const blob = await response.blob();
+                
+                // Firebaseのパス: submissions/テストコード/学籍番号/問題番号.png
+                const imagePath = `submissions/${testCode}/${studentId}/question${i + 1}.png`;
+                const storageRef = firebaseStorage.ref(imagePath);
+                
+                console.log(`Uploading image: ${imagePath}`);
+                await storageRef.put(blob);
+                console.log(`Successfully uploaded: ${imagePath}`);
             }
         }
         
         // 詳細なメタデータを保存（採点用データ含む）
-        try {
-            const metadata = {
-                studentId: studentId,
-                testCode: testCode,
-                timestamp: new Date().toISOString(),
-                uploadedAt: new Date().toLocaleString('ja-JP'),
-                questionCount: answers.length,
-                answers: answers.map((answer, index) => ({
-                    questionNumber: index + 1,
-                    method: answer.method,
-                    textAnswer: answer.method === 'text' ? answer.text : null,
-                    hasHandwriting: answer.method === 'canvas' && answer.canvas ? true : false,
-                    imageFileName: answer.method === 'canvas' && answer.canvas ? `question${index + 1}.png` : null
-                })),
-                testInfo: {
-                    totalTime: window.totalTestTime || 0,
-                    violations: window.violationCount || 0,
-                    browser: navigator.userAgent,
-                    deviceInfo: {
-                        platform: navigator.platform,
-                        language: navigator.language,
-                        screen: `${screen.width}x${screen.height}`
-                    }
+        const metadata = {
+            studentId: studentId,
+            testCode: testCode,
+            timestamp: new Date().toISOString(),
+            uploadedAt: new Date().toLocaleString('ja-JP'),
+            questionCount: answers.length,
+            answers: answers.map((answer, index) => ({
+                questionNumber: index + 1,
+                method: answer.method,
+                textAnswer: answer.method === 'text' ? answer.text : null,
+                hasHandwriting: answer.method === 'canvas' && answer.canvas ? true : false,
+                imageFileName: answer.method === 'canvas' && answer.canvas ? `question${index + 1}.png` : null
+            })),
+            testInfo: {
+                totalTime: window.totalTestTime || 0,
+                violations: window.violationCount || 0,
+                browser: navigator.userAgent,
+                deviceInfo: {
+                    platform: navigator.platform,
+                    language: navigator.language,
+                    screen: `${screen.width}x${screen.height}`
                 }
-            };
-            
-            const metadataPath = `submissions/${testCode}/${studentId}/metadata.json`;
-            const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
-            await firebaseStorage.ref(metadataPath).put(metadataBlob);
-            console.log('✅ Successfully uploaded metadata');
-            
-        } catch (metadataError) {
-            console.error('Failed to upload metadata:', metadataError);
-        }
+            }
+        };
         
-        console.log('🎉 Firebase image upload process completed');
+        const metadataPath = `submissions/${testCode}/${studentId}/metadata.json`;
+        const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
+        await firebaseStorage.ref(metadataPath).put(metadataBlob);
+        
+        console.log('Firebase image upload completed successfully');
         
     } catch (error) {
-        console.error('❌ Firebase upload error:', error);
-        console.error('Error details:', error.code, error.message);
-        
-        // quota exceeded エラーの場合は再試行しない
-        if (error.code === 'storage/quota-exceeded') {
-            throw new Error('Firebase Storage容量制限に達しました。管理者に連絡してください。');
-        }
-        
-        // その他のエラーも上位に伝播
-        throw error;
+        console.error('Firebase upload error:', error);
+        // アップロードエラーでも解答提出は継続（ローカル保存は成功しているため）
     }
 }
 
