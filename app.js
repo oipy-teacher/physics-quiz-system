@@ -305,6 +305,12 @@ async function studentLogin() {
         errorDiv.style.display = 'block';
         return;
     }
+    
+    // まずURLパラメータからデータを取得を試行
+    const urlDataLoaded = loadQuestionsFromUrl();
+    if (urlDataLoaded && currentTestCode) {
+        console.log('URL data loaded successfully, test code:', currentTestCode);
+    }
 
     // バリデーション
     if (!/^\d{4}$/.test(inputId)) {
@@ -379,8 +385,16 @@ async function studentLogin() {
 
         // 新しい変数に設定
         currentStudentId = inputId;
-        currentTestCode = activeTestCode;
-        currentTestData = { questions: questions, answerExamples: answerExamples };
+        
+        // URLからテストコードが取得できている場合はそれを優先
+        if (currentTestCode) {
+            console.log('Using test code from URL:', currentTestCode);
+        } else {
+            currentTestCode = activeTestCode;
+            console.log('Using test code from localStorage:', currentTestCode);
+        }
+        
+        currentTestData = { questions: questions, answerExamples: answerExamples, testCode: currentTestCode };
         studentId = inputId; // 後方互換性のため
         
         errorDiv.style.display = 'none';
@@ -1548,7 +1562,24 @@ function loadQuestionsFromUrl() {
             answerExamples = data.answerExamples || [];
             testEnabled = data.testEnabled || false;
             
+            // URLからロードした場合、テストコードを設定
+            if (data.testCode) {
+                currentTestCode = data.testCode;
+                console.log('Test code set from URL data:', currentTestCode);
+            } else if (testCode) {
+                currentTestCode = testCode;
+                console.log('Test code set from URL parameter:', currentTestCode);
+            }
+            
+            // URLデータを currentTestData に設定
+            currentTestData = {
+                questions: questions,
+                answerExamples: answerExamples,
+                testCode: currentTestCode
+            };
+            
             console.log('Questions loaded from URL:', questions.length);
+            console.log('Current test code:', currentTestCode);
             
             // 管理画面の場合は表示を更新
             if (document.getElementById('questionList')) {
