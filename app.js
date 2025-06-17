@@ -1316,6 +1316,13 @@ function loadQuestionsFromUrl() {
             dataParam: dataParam ? 'present' : 'null'
         });
         
+        // デバッグ情報を画面に表示
+        showDebugInfo('URL読み込み開始', {
+            url: window.location.href.substring(0, 100) + '...',
+            testCode: testCode || 'なし',
+            dataParam: dataParam ? 'あり' : 'なし'
+        });
+        
         let data = null;
         
         if (dataParam) {
@@ -1351,6 +1358,12 @@ function loadQuestionsFromUrl() {
             
             console.log('Questions loaded from URL:', questions.length);
             
+            // 成功のデバッグ情報を表示
+            showDebugInfo('データ読み込み成功', {
+                '問題数': questions.length,
+                'テスト有効': testEnabled ? 'はい' : 'いいえ'
+            });
+            
             // 管理画面の場合は表示を更新
             if (document.getElementById('questionList')) {
                 renderQuestionList();
@@ -1376,6 +1389,12 @@ function loadQuestionsFromUrl() {
         }
     } catch (error) {
         console.log('URL data not available or invalid:', error);
+        
+        // エラーのデバッグ情報を表示
+        showDebugInfo('URL読み込みエラー', {
+            'エラー': error.message,
+            'URL': window.location.href.substring(0, 50) + '...'
+        });
     }
     return false;
 }
@@ -2886,6 +2905,79 @@ function showNewSubmissionAlert(notification) {
     `;
     
     document.body.appendChild(alertDiv);
+}
+
+// デバッグ情報表示（開発者ツールが使えない場合用）
+function showDebugInfo(title, info) {
+    // デバッグモードが有効でない場合は何もしない
+    if (!window.location.search.includes('debug=1')) {
+        return;
+    }
+    
+    // 既存のデバッグパネルを取得または作成
+    let debugPanel = document.getElementById('debugPanel');
+    if (!debugPanel) {
+        debugPanel = document.createElement('div');
+        debugPanel.id = 'debugPanel';
+        debugPanel.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            z-index: 9999;
+            max-width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+        `;
+        document.body.appendChild(debugPanel);
+        
+        // 閉じるボタンを追加
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '×';
+        closeBtn.style.cssText = `
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: red;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            padding: 2px 6px;
+        `;
+        closeBtn.onclick = () => debugPanel.remove();
+        debugPanel.appendChild(closeBtn);
+    }
+    
+    // デバッグ情報を追加
+    const debugEntry = document.createElement('div');
+    debugEntry.style.cssText = `
+        border-bottom: 1px solid #555;
+        padding: 5px 0;
+        margin-bottom: 5px;
+    `;
+    
+    let content = `<strong>${title}</strong><br>`;
+    content += `時刻: ${new Date().toLocaleTimeString()}<br>`;
+    
+    if (typeof info === 'object') {
+        Object.entries(info).forEach(([key, value]) => {
+            content += `${key}: ${value}<br>`;
+        });
+    } else {
+        content += `${info}<br>`;
+    }
+    
+    debugEntry.innerHTML = content;
+    debugPanel.appendChild(debugEntry);
+    
+    // 最新のエントリが見えるようにスクロール
+    debugPanel.scrollTop = debugPanel.scrollHeight;
 }
 
 // ========== 初期化処理 ==========
