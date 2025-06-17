@@ -305,12 +305,6 @@ async function studentLogin() {
         errorDiv.style.display = 'block';
         return;
     }
-    
-    // まずURLパラメータからデータを取得を試行
-    const urlDataLoaded = loadQuestionsFromUrl();
-    if (urlDataLoaded && currentTestCode) {
-        console.log('URL data loaded successfully, test code:', currentTestCode);
-    }
 
     // バリデーション
     if (!/^\d{4}$/.test(inputId)) {
@@ -351,7 +345,7 @@ async function studentLogin() {
         const testCodeKeys = allKeys.filter(key => key.startsWith('testCode_'));
         console.log('Found testCode keys:', testCodeKeys);
         
-        let activeTestCode = null;
+        let activeTestCode = 'LOCAL';
         
         if (testCodeKeys.length > 0) {
             // 最新のテストコードを取得
@@ -359,7 +353,7 @@ async function studentLogin() {
                 try {
                     const data = JSON.parse(localStorage.getItem(key));
                     console.log(`Data for ${key}:`, data);
-                    return { code: key.replace('testCode_', ''), lastUpdated: data.lastUpdated || new Date().toISOString() };
+                    return { code: key.replace('testCode_', ''), lastUpdated: data.lastUpdated };
                 } catch (e) {
                     console.error(`Error parsing ${key}:`, e);
                     return null;
@@ -374,27 +368,17 @@ async function studentLogin() {
                 activeTestCode = testCodes[0].code;
                 console.log('Selected active test code:', activeTestCode);
                 console.log('Full test code data:', testCodes[0]);
+            } else {
+                console.log('No valid test codes found, using LOCAL');
             }
-        }
-        
-        // LOCALは最後の手段
-        if (!activeTestCode) {
-            console.log('No valid test codes found, using LOCAL as fallback');
-            activeTestCode = 'LOCAL';
+        } else {
+            console.log('No testCode_ keys found in localStorage');
         }
 
         // 新しい変数に設定
         currentStudentId = inputId;
-        
-        // URLからテストコードが取得できている場合はそれを優先
-        if (currentTestCode) {
-            console.log('Using test code from URL:', currentTestCode);
-        } else {
-            currentTestCode = activeTestCode;
-            console.log('Using test code from localStorage:', currentTestCode);
-        }
-        
-        currentTestData = { questions: questions, answerExamples: answerExamples, testCode: currentTestCode };
+        currentTestCode = activeTestCode;
+        currentTestData = { questions: questions, answerExamples: answerExamples };
         studentId = inputId; // 後方互換性のため
         
         errorDiv.style.display = 'none';
@@ -862,7 +846,6 @@ async function generateShareUrl(data) {
             encodedData: encodedData,
             testCode: testCode,
             created: new Date().toISOString(),
-            lastUpdated: new Date().toISOString(),
             dataUrl: dataUrl,
             ...data
         }));
@@ -941,7 +924,7 @@ function showTestCodeOptions(dataToSave, existingCodes) {
         display: flex;
         justify-content: center;
         align-items: center;
-        z-index: 9999;
+        z-index: 2000;
     `;
     
     const existingCodesHtml = existingCodes.map(code => `
@@ -970,7 +953,7 @@ function showTestCodeOptions(dataToSave, existingCodes) {
                     🆕 新しいコードを作成
                 </button>
                 <button onclick="closeTestCodeModal()" 
-                        style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer; position: relative; z-index: 10000;">
+                        style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer;">
                     キャンセル
                 </button>
             </div>
@@ -978,14 +961,6 @@ function showTestCodeOptions(dataToSave, existingCodes) {
     `;
     
     modal.id = 'testCodeModal';
-    
-    // 背景クリックで閉じる
-    modal.addEventListener('click', function(e) {
-        if (e.target === modal) {
-            closeTestCodeModal();
-        }
-    });
-    
     document.body.appendChild(modal);
 }
 
@@ -1007,7 +982,6 @@ function useExistingTestCode(testCode, dataToSave) {
                     ...dataToSave,
                     cloudSaved: true,
                     testCode: testCode,
-                    lastUpdated: new Date().toISOString(),
                     updated: new Date().toISOString()
                 }));
                 showShareOptions(dataToSave, { testCode: testCode, cloudSaved: true });
@@ -1046,7 +1020,6 @@ function updateLocalData(dataToSave, testCode) {
             ...dataToSave,
             cloudSaved: true,
             testCode: testCode,
-            lastUpdated: new Date().toISOString(),
             updated: new Date().toISOString()
         }));
         
@@ -1078,7 +1051,7 @@ function showShareOptions(data, shareResult) {
         display: flex;
         justify-content: center;
         align-items: center;
-        z-index: 9999;
+        z-index: 2000;
     `;
     
     const testCode = shareResult.testCode;
@@ -1562,24 +1535,7 @@ function loadQuestionsFromUrl() {
             answerExamples = data.answerExamples || [];
             testEnabled = data.testEnabled || false;
             
-            // URLからロードした場合、テストコードを設定
-            if (data.testCode) {
-                currentTestCode = data.testCode;
-                console.log('Test code set from URL data:', currentTestCode);
-            } else if (testCode) {
-                currentTestCode = testCode;
-                console.log('Test code set from URL parameter:', currentTestCode);
-            }
-            
-            // URLデータを currentTestData に設定
-            currentTestData = {
-                questions: questions,
-                answerExamples: answerExamples,
-                testCode: currentTestCode
-            };
-            
             console.log('Questions loaded from URL:', questions.length);
-            console.log('Current test code:', currentTestCode);
             
             // 管理画面の場合は表示を更新
             if (document.getElementById('questionList')) {
@@ -2056,29 +2012,19 @@ function nextQuestion() {
 }
 
 async function submitTest() {
-    console.log('=== submitTest called ===');
-    console.log('currentStudentId:', currentStudentId);
-    console.log('currentTestCode:', currentTestCode);
-    console.log('userAnswers:', userAnswers);
-    
     if (confirm('テストを提出しますか？提出後は修正できません。')) {
-        try {
-            // 最後の回答を保存
-            saveCurrentAnswer();
-            
-            // タイマー停止
-            clearInterval(timerInterval);
-            
-            // 解答を保存（統一された保存関数を使用）
-            await saveSubmissionResult();
-            
-            // 完了画面表示
-            showScreen('result');
-            showSubmissionComplete();
-        } catch (error) {
-            console.error('Submit test error:', error);
-            alert('提出処理でエラーが発生しました: ' + error.message);
-        }
+        // 最後の回答を保存
+        saveCurrentAnswer();
+        
+        // タイマー停止
+        clearInterval(timerInterval);
+        
+        // 解答を保存（統一された保存関数を使用）
+        saveSubmissionResult();
+        
+        // 完了画面表示
+        showScreen('result');
+        showSubmissionComplete();
     }
 }
 
@@ -2230,22 +2176,14 @@ async function saveSubmissionResult() {
         
         const finalStudentId = currentStudentId || studentId;
         const finalTestCode = currentTestCode || 'LOCAL';
-        const finalAnswers = userAnswers || (testData ? testData.answers : []) || [];
-        const finalQuestions = currentTestData ? currentTestData.questions : questions || [];
+        const finalAnswers = userAnswers || (testData ? testData.answers : []);
+        const finalQuestions = currentTestData ? currentTestData.questions : questions;
         const finalStartTime = testStartTime || startTime || new Date();
-        
-        console.log('Final values for submission:');
-        console.log('finalStudentId:', finalStudentId);
-        console.log('finalTestCode:', finalTestCode);
-        console.log('finalAnswers count:', finalAnswers.length);
-        console.log('finalQuestions count:', finalQuestions.length);
         
         if (!finalStudentId) {
             console.error('No student ID available');
-            console.error('currentStudentId:', currentStudentId);
-            console.error('studentId:', typeof studentId !== 'undefined' ? studentId : 'undefined');
             alert('学籍番号が取得できませんでした。再度ログインしてください。');
-            throw new Error('No student ID available');
+            return;
         }
         
         const submissionData = {
