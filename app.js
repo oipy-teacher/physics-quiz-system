@@ -10,6 +10,15 @@ let testData = {
     violations: []
 };
 
+// 新しいテストシステム用の変数
+let currentStudentId = '';
+let currentTestCode = '';
+let currentTestData = null;
+let testStartTime = null;
+let userAnswers = [];
+let isTabSwitched = false;
+let isDevToolsOpen = false;
+
 // 問題データ
 let questions = [];
 let answerExamples = []; // 解答例画像データ
@@ -156,7 +165,12 @@ async function testCodeLogin() {
         questions = data.questions;
         answerExamples = data.answerExamples || [];
         testEnabled = data.testEnabled || false;
-        studentId = studentIdInput;
+        
+        // 新しい変数にも設定
+        currentStudentId = studentIdInput;
+        currentTestCode = testCode;
+        currentTestData = data;
+        studentId = studentIdInput; // 後方互換性のため
 
         errorDiv.style.display = 'none';
         showScreen('test');
@@ -194,7 +208,12 @@ async function studentLogin() {
             return;
         }
 
-        studentId = inputId;
+        // 新しい変数に設定
+        currentStudentId = inputId;
+        currentTestCode = 'LOCAL'; // ローカルテスト用
+        currentTestData = { questions: questions, answerExamples: answerExamples };
+        studentId = inputId; // 後方互換性のため
+        
         errorDiv.style.display = 'none';
 
         // テスト画面に遷移
@@ -1491,8 +1510,10 @@ function setInputMethod(method) {
 function startTest() {
     currentQuestionIndex = 0;
     startTime = new Date();
+    testStartTime = new Date(); // 新しい変数にも設定
     violationCount = 0;
     testData = { answers: [], violations: [] };
+    userAnswers = []; // 新しい回答配列を初期化
     canvasData = [];
     ocrResults = [];
     gradingResults = [];
