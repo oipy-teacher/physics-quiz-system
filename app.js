@@ -187,29 +187,55 @@ async function studentLogin() {
     const inputId = document.getElementById('studentId').value;
     const errorDiv = document.getElementById('loginError');
 
-    // 学籍番号入力を完全に無効化
-    errorDiv.innerHTML = `
-        <div style="text-align: left; background: #fff3cd; padding: 20px; border-radius: 8px; border: 1px solid #ffeaa7;">
-            <h4 style="color: #856404; margin-top: 0;">⚠️ 学籍番号のみでの受験は無効です</h4>
-            <p style="color: #856404; margin: 10px 0;">
-                <strong>正しいアクセス方法：</strong>
-            </p>
-            <ol style="color: #856404; margin: 10px 0; padding-left: 20px;">
-                <li><strong>教員から配布されたQRコードをスキャン</strong></li>
-                <li><strong>または、教員から受け取った完全なURLにアクセス</strong></li>
-            </ol>
-            <p style="color: #856404; margin: 10px 0; font-size: 14px;">
-                ※ セキュリティ上、学籍番号のみでの受験は禁止されています
-            </p>
-            <div style="margin-top: 15px;">
-                <button onclick="showTestCodeLogin()" style="background: #007aff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                    📱 テストコードでログイン
-                </button>
-            </div>
-        </div>
-    `;
+    // バリデーション
+    if (!/^\d{4}$/.test(inputId)) {
+        errorDiv.textContent = '学籍番号は4桁の数字で入力してください';
         errorDiv.style.display = 'block';
         return;
+    }
+
+    // データを再読み込み
+    errorDiv.textContent = 'テストデータを読み込み中...';
+    errorDiv.style.display = 'block';
+
+    try {
+        await loadSavedQuestions();
+        
+                // 学籍番号のみでの受験を完全に無効化（セキュリティ強化）
+        errorDiv.innerHTML = `
+            <div style="text-align: left; padding: 20px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px;">
+                <h4 style="color: #856404; margin: 0 0 15px 0;">🔒 学籍番号のみでの受験は無効化されました</h4>
+                <strong>学生の方へ：</strong><br><br>
+                1. <strong>教員から配布されたQRコードをスキャン</strong>してください<br>
+                2. または、<strong>教員から受け取った完全なURL</strong>にアクセスしてください<br>
+                3. 上記方法で「📱 テストコードでログイン」を使用してください<br><br>
+                <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px;">
+                    <strong>🛡️ セキュリティのため：</strong><br>
+                    - 学籍番号のみでの受験は禁止されています<br>
+                    - 必ずテストコードまたはQRコードが必要です<br>
+                    - 不正受験を防ぐための措置です
+                </div>
+            </div>
+        `;
+        errorDiv.style.display = 'block';
+        return;
+
+        // 新しい変数に設定
+        currentStudentId = inputId;
+        currentTestCode = 'LOCAL'; // ローカルテスト用
+        currentTestData = { questions: questions, answerExamples: answerExamples };
+        studentId = inputId; // 後方互換性のため
+        
+        errorDiv.style.display = 'none';
+
+        // テスト画面に遷移
+        showScreen('test');
+        startTest();
+    } catch (error) {
+        console.error('Login error:', error);
+        errorDiv.textContent = 'テストデータの読み込みに失敗しました。ページを再読み込みしてください。';
+        errorDiv.style.display = 'block';
+    }
 }
 
 // 管理者ログイン
@@ -2030,11 +2056,12 @@ function saveSubmissionResult() {
         localStorage.setItem('studentSubmissions', JSON.stringify(allFiltered));
         console.log('Submission saved to localStorage');
         
-        // 異なる端末からのアクセスの場合、複数の保存方法を試行
+        // 異なる端末からのアクセスの場合、クラウドストレージシミュレーション
+        // 実際にはここでサーバーAPIに送信すべきだが、GitHub Pagesでは代替手段を使用
         if (finalTestCode !== 'LOCAL') {
-            console.log('Cross-device submission detected, attempting multiple save methods...');
+            console.log('Cross-device submission detected, attempting alternative save...');
             
-            // 方法1: テストコード固有のキーで保存
+            // テストコード固有のキーで保存（異なる端末間で共有される可能性を高める）
             const cloudKey = `submission_${finalTestCode}_${finalStudentId}`;
             const cloudData = {
                 ...submissionData,
@@ -2047,35 +2074,6 @@ function saveSubmissionResult() {
                 console.log('Cloud-style save completed:', cloudKey);
             } catch (e) {
                 console.warn('Cloud-style save failed:', e);
-            }
-            
-            // 方法2: 一意キーでの追加保存
-            const uniqueKey = `submission_${finalTestCode}_${finalStudentId}_${Date.now()}`;
-            try {
-                localStorage.setItem(uniqueKey, JSON.stringify({
-                    ...cloudData,
-                    uniqueKey: true,
-                    saveMethod: 'cross-device'
-                }));
-                console.log('Unique key save completed:', uniqueKey);
-            } catch (e) {
-                console.warn('Unique key save failed:', e);
-            }
-            
-            // 方法3: 教員確認用の緊急保存
-            const emergencyKey = `emergency_submissions`;
-            try {
-                const existingEmergency = JSON.parse(localStorage.getItem(emergencyKey) || '[]');
-                existingEmergency.push({
-                    ...cloudData,
-                    emergencySave: true,
-                    userAgent: navigator.userAgent,
-                    timestamp: new Date().toISOString()
-                });
-                localStorage.setItem(emergencyKey, JSON.stringify(existingEmergency));
-                console.log('Emergency save completed');
-            } catch (e) {
-                console.warn('Emergency save failed:', e);
             }
         }
         
@@ -2143,9 +2141,6 @@ function showSubmissionResults() {
             })
             .filter(sub => sub && sub.cloudSaved);
         
-        // 4. 緊急保存データも読み込み
-        const emergencySubmissions = JSON.parse(localStorage.getItem('emergency_submissions') || '[]');
-        
         cloudSubmissions.forEach(cloudSub => {
             const testCode = cloudSub.testCode || 'UNKNOWN';
             if (!testCodeGroups[testCode]) {
@@ -2158,23 +2153,6 @@ function showSubmissionResults() {
             if (!isDuplicate) {
                 testCodeGroups[testCode].push(cloudSub);
                 allSubmissions.push(cloudSub);
-            }
-        });
-        
-        // 緊急保存データも統合
-        emergencySubmissions.forEach(emergencySub => {
-            const testCode = emergencySub.testCode || 'EMERGENCY';
-            if (!testCodeGroups[testCode]) {
-                testCodeGroups[testCode] = [];
-            }
-            const isDuplicate = testCodeGroups[testCode].some(existing => 
-                existing.studentId === emergencySub.studentId && 
-                existing.timestamp === emergencySub.timestamp
-            );
-            if (!isDuplicate) {
-                emergencySub.isEmergencySave = true; // マーク付け
-                testCodeGroups[testCode].push(emergencySub);
-                allSubmissions.push(emergencySub);
             }
         });
         
