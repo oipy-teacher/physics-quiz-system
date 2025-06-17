@@ -968,6 +968,145 @@ function copyTestCode(code) {
     });
 }
 
+// テストコード詳細表示
+function showTestCodeDetails(testCode) {
+    const testKey = `testCode_${testCode}`;
+    const testData = localStorage.getItem(testKey);
+    
+    if (!testData) {
+        alert('テストデータが見つかりません。');
+        return;
+    }
+    
+    try {
+        const parsedData = JSON.parse(testData);
+        const submissionKey = `submissions_${testCode}`;
+        const submissions = JSON.parse(localStorage.getItem(submissionKey) || '[]');
+        
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        `;
+        
+        modal.innerHTML = `
+            <div style="background: white; padding: 30px; border-radius: 15px; max-width: 600px; max-height: 80%; overflow: auto;">
+                <h3>📝 テストコード詳細: ${testCode}</h3>
+                <div style="margin: 20px 0;">
+                    <p><strong>問題数:</strong> ${parsedData.questions ? parsedData.questions.length : 0}問</p>
+                    <p><strong>作成日時:</strong> ${parsedData.created ? new Date(parsedData.created).toLocaleString('ja-JP') : '不明'}</p>
+                    <p><strong>提出数:</strong> ${submissions.length}件</p>
+                    <p><strong>データ保存:</strong> ${parsedData.cloudSaved ? '☁️ クラウド' : '💾 ローカル'}</p>
+                </div>
+                
+                ${submissions.length > 0 ? `
+                    <div style="margin-top: 20px;">
+                        <h4>提出済み学生:</h4>
+                        <div style="max-height: 200px; overflow: auto; border: 1px solid #ddd; padding: 10px; border-radius: 5px;">
+                            ${submissions.map(sub => `
+                                <div style="padding: 5px 0; border-bottom: 1px solid #eee;">
+                                    学籍番号: ${sub.studentId} - 提出時刻: ${new Date(sub.timestamp).toLocaleString('ja-JP')}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                
+                <div style="margin-top: 30px; text-align: center;">
+                    <button onclick="showQRForTestCode('${testCode}'); closeTestCodeModal()" 
+                            style="background: #007aff; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer;">
+                        📱 QRコードを表示
+                    </button>
+                    <button onclick="copyTestCode('${testCode}')" 
+                            style="background: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer;">
+                        📋 コードをコピー
+                    </button>
+                    <button onclick="closeTestCodeModal()" 
+                            style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; margin: 5px; cursor: pointer;">
+                        閉じる
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        modal.id = 'testCodeDetailModal';
+        modal.onclick = (e) => {
+            if (e.target === modal) closeTestCodeModal();
+        };
+        document.body.appendChild(modal);
+        
+    } catch (e) {
+        console.error('Error showing test code details:', e);
+        alert('テストデータの読み込みに失敗しました。');
+    }
+}
+
+// テストコード削除
+function deleteTestCode(testCode) {
+    if (!confirm(`テストコード「${testCode}」を削除しますか？\n\n注意: 関連する提出データもすべて削除されます。`)) {
+        return;
+    }
+    
+    try {
+        // テストコードデータを削除
+        const testKey = `testCode_${testCode}`;
+        localStorage.removeItem(testKey);
+        
+        // 関連する提出データを削除
+        const submissionKey = `submissions_${testCode}`;
+        localStorage.removeItem(submissionKey);
+        
+        // 個別提出データも削除
+        const allKeys = Object.keys(localStorage);
+        const relatedKeys = allKeys.filter(key => key.includes(testCode));
+        relatedKeys.forEach(key => localStorage.removeItem(key));
+        
+        alert(`テストコード「${testCode}」とその関連データを削除しました。`);
+        
+        // 表示を更新
+        showExistingTestCodes();
+        
+    } catch (e) {
+        console.error('Error deleting test code:', e);
+        alert('削除に失敗しました。');
+    }
+}
+
+// QRコード表示
+function showQRForTestCode(testCode) {
+    // 既存のQRコード生成関数を使用
+    generateQRCode(testCode);
+    
+    // 共有モーダルを表示
+    const testKey = `testCode_${testCode}`;
+    const testData = localStorage.getItem(testKey);
+    
+    if (testData) {
+        try {
+            const parsedData = JSON.parse(testData);
+            showShareOptions(parsedData, { testCode: testCode, cloudSaved: parsedData.cloudSaved });
+        } catch (e) {
+            console.error('Error showing QR:', e);
+            alert('QRコードの表示に失敗しました。');
+        }
+    }
+}
+
+function closeTestCodeModal() {
+    const modal = document.getElementById('testCodeDetailModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
 // QRコード生成（データ埋め込み版）
 function generateQRCode(testCode) {
     const qrContainer = document.getElementById('qrcode');
@@ -1127,15 +1266,24 @@ function showExistingTestCodes() {
     if (existingCodes.length > 0) {
         const codesHtml = existingCodes.map(code => `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; margin: 5px 0; background: white; border-radius: 8px; border: 1px solid #dee2e6;">
-                <div>
+                <div onclick="showTestCodeDetails('${code.testCode}')" style="cursor: pointer; flex: 1;">
                     <span style="font-size: 18px; font-weight: bold; color: #007aff;">${code.testCode}</span>
                     <span style="margin-left: 10px; font-size: 12px; color: #666;">
                         ${code.hasCloud ? '☁️ クラウド' : '💾 ローカル'}
                     </span>
+                    <div style="font-size: 10px; color: #999; margin-top: 2px;">クリックで詳細表示</div>
                 </div>
-                <button onclick="copyTestCode('${code.testCode}')" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;">
-                    コピー
-                </button>
+                <div style="display: flex; gap: 5px;">
+                    <button onclick="copyTestCode('${code.testCode}')" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;">
+                        📋 コピー
+                    </button>
+                    <button onclick="showQRForTestCode('${code.testCode}')" style="background: #007aff; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;">
+                        📱 QR表示
+                    </button>
+                    <button onclick="deleteTestCode('${code.testCode}')" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;">
+                        🗑️ 削除
+                    </button>
+                </div>
             </div>
         `).join('');
         
