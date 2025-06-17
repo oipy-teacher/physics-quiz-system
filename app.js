@@ -345,7 +345,7 @@ async function studentLogin() {
         const testCodeKeys = allKeys.filter(key => key.startsWith('testCode_'));
         console.log('Found testCode keys:', testCodeKeys);
         
-        let activeTestCode = 'LOCAL';
+        let activeTestCode = null;
         
         if (testCodeKeys.length > 0) {
             // 最新のテストコードを取得
@@ -353,7 +353,7 @@ async function studentLogin() {
                 try {
                     const data = JSON.parse(localStorage.getItem(key));
                     console.log(`Data for ${key}:`, data);
-                    return { code: key.replace('testCode_', ''), lastUpdated: data.lastUpdated };
+                    return { code: key.replace('testCode_', ''), lastUpdated: data.lastUpdated || new Date().toISOString() };
                 } catch (e) {
                     console.error(`Error parsing ${key}:`, e);
                     return null;
@@ -368,11 +368,13 @@ async function studentLogin() {
                 activeTestCode = testCodes[0].code;
                 console.log('Selected active test code:', activeTestCode);
                 console.log('Full test code data:', testCodes[0]);
-            } else {
-                console.log('No valid test codes found, using LOCAL');
             }
-        } else {
-            console.log('No testCode_ keys found in localStorage');
+        }
+        
+        // LOCALは最後の手段
+        if (!activeTestCode) {
+            console.log('No valid test codes found, using LOCAL as fallback');
+            activeTestCode = 'LOCAL';
         }
 
         // 新しい変数に設定
@@ -846,6 +848,7 @@ async function generateShareUrl(data) {
             encodedData: encodedData,
             testCode: testCode,
             created: new Date().toISOString(),
+            lastUpdated: new Date().toISOString(),
             dataUrl: dataUrl,
             ...data
         }));
@@ -982,6 +985,7 @@ function useExistingTestCode(testCode, dataToSave) {
                     ...dataToSave,
                     cloudSaved: true,
                     testCode: testCode,
+                    lastUpdated: new Date().toISOString(),
                     updated: new Date().toISOString()
                 }));
                 showShareOptions(dataToSave, { testCode: testCode, cloudSaved: true });
@@ -1020,6 +1024,7 @@ function updateLocalData(dataToSave, testCode) {
             ...dataToSave,
             cloudSaved: true,
             testCode: testCode,
+            lastUpdated: new Date().toISOString(),
             updated: new Date().toISOString()
         }));
         
