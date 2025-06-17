@@ -256,6 +256,44 @@ function showScreen(screen) {
 
 // ========== 教員用機能 ==========
 
+// 画像圧縮関数（localStorageの容量制限対策）
+function compressImage(dataUrl, callback, quality = 0.6, maxWidth = 800, maxHeight = 600) {
+    const img = new Image();
+    img.onload = function() {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // アスペクト比を保持してリサイズ
+        let { width, height } = img;
+        
+        if (width > height) {
+            if (width > maxWidth) {
+                height = height * (maxWidth / width);
+                width = maxWidth;
+            }
+        } else {
+            if (height > maxHeight) {
+                width = width * (maxHeight / height);
+                height = maxHeight;
+            }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // 画像を描画
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // 圧縮されたデータURLを取得
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        
+        console.log(`Image compressed: ${Math.round(dataUrl.length/1024)}KB → ${Math.round(compressedDataUrl.length/1024)}KB`);
+        
+        callback(compressedDataUrl);
+    };
+    img.src = dataUrl;
+}
+
 // ドラッグ＆ドロップ設定
 function setupDragAndDrop() {
     // 問題画像のドラッグ＆ドロップ
@@ -333,7 +371,10 @@ function handleFiles(files) {
 
         const reader = new FileReader();
         reader.onload = function(e) {
-            addQuestion(e.target.result);
+            // 画像を圧縮してからaddQuestion
+            compressImage(e.target.result, (compressedImage) => {
+                addQuestion(compressedImage);
+            });
         };
         reader.readAsDataURL(file);
     }
@@ -351,7 +392,10 @@ function handleAnswerFiles(files) {
 
         const reader = new FileReader();
         reader.onload = function(e) {
-            addAnswerExample(e.target.result);
+            // 画像を圧縮してからaddAnswerExample
+            compressImage(e.target.result, (compressedImage) => {
+                addAnswerExample(compressedImage);
+            });
         };
         reader.readAsDataURL(file);
     }
@@ -359,6 +403,11 @@ function handleAnswerFiles(files) {
 
 // 問題追加
 function addQuestion(imageData) {
+    // 容量チェック
+    if (!checkStorageUsage()) {
+        return;
+    }
+    
     const questionId = `q${questions.length + 1}`;
     const question = {
         id: questionId,
@@ -369,7 +418,7 @@ function addQuestion(imageData) {
 
     questions.push(question);
     renderQuestionList();
-    showAdminSuccess('問題を追加しました。正解パターンを設定してください。');
+    showAdminSuccess(`問題を追加しました (${Math.round(imageData.length/1024)}KB)。正解パターンを設定してください。`);
 }
 
 // 解答例追加
@@ -1159,15 +1208,30 @@ function generateQRCode(testCode) {
     // QRコード画像URLを生成
     qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(targetUrl)}`;
     
+    // URLの種類を判定
+    const urlType = targetUrl.includes('?data=') ? 'データ埋め込み' : 'テストコード';
+    const urlColor = targetUrl.includes('?data=') ? '#28a745' : '#dc3545';
+    
     qrContainer.innerHTML = `
         <div style="text-align: center;">
             <img src="${qrUrl}" alt="QRコード" style="border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;">
             <div style="font-size: 12px; color: #666; margin-top: 5px;">
                 テストコード: <strong>${testCode}</strong>
             </div>
-            <div style="font-size: 10px; color: #999; margin-top: 5px; word-break: break-all;">
-                URL: ${targetUrl.length > 50 ? targetUrl.substring(0, 50) + '...' : targetUrl}
+            <div style="font-size: 11px; color: ${urlColor}; margin-top: 5px; font-weight: bold;">
+                🔗 ${urlType}形式
             </div>
+            <div style="font-size: 10px; color: #999; margin-top: 5px; word-break: break-all;">
+                URL: ${targetUrl.length > 80 ? targetUrl.substring(0, 80) + '...' : targetUrl}
+            </div>
+            ${targetUrl.includes('?code=') && !targetUrl.includes('?data=') ? `
+                <div style="background: #fff3cd; color: #856404; padding: 10px; margin-top: 10px; border-radius: 5px; font-size: 12px;">
+                    ⚠️ テストコード形式では別端末からアクセスできません<br>
+                    <button onclick="forceRegenerateDataURL('${testCode}')" style="background: #ffc107; color: #212529; border: none; padding: 5px 10px; border-radius: 3px; margin-top: 5px; cursor: pointer;">
+                        データ埋め込み形式で再生成
+                    </button>
+                </div>
+            ` : ''}
         </div>
     `;
 }
@@ -2929,6 +2993,99 @@ function showNewSubmissionAlert(notification) {
     `;
     
     document.body.appendChild(alertDiv);
+}
+
+// localStorageの使用容量をチェック
+function checkStorageUsage() {
+    let totalSize = 0;
+    for (let key in localStorage) {
+        if (localStorage.hasOwnProperty(key)) {
+            totalSize += localStorage[key].length;
+        }
+    }
+    
+    const usedMB = (totalSize / (1024 * 1024)).toFixed(2);
+    const limitMB = 5; // 通常のlocalStorage制限は5MB
+    
+    console.log(`localStorage使用量: ${usedMB}MB / ${limitMB}MB`);
+    
+    if (usedMB > limitMB * 0.8) { // 80%を超えたら警告
+        showAdminError(`⚠️ ストレージ容量が不足しています (${usedMB}MB/${limitMB}MB)\n画像ファイルサイズを小さくするか、古いデータを削除してください。`);
+        return false;
+    }
+    
+    return true;
+}
+
+// 強制的にデータ埋め込みURLを再生成
+function forceRegenerateDataURL(testCode) {
+    const testKey = `testCode_${testCode}`;
+    const testData = localStorage.getItem(testKey);
+    
+    if (!testData) {
+        showAdminError('テストデータが見つかりません。');
+        return;
+    }
+    
+    try {
+        const parsedData = JSON.parse(testData);
+        
+        if (!parsedData.questions || parsedData.questions.length === 0) {
+            showAdminError('問題データが見つかりません。問題を再アップロードしてください。');
+            return;
+        }
+        
+        // データ埋め込みURLを強制生成
+        const dataToEmbed = {
+            questions: parsedData.questions,
+            answerExamples: parsedData.answerExamples || [],
+            testEnabled: true,
+            testCode: testCode,
+            created: parsedData.created || new Date().toISOString()
+        };
+        
+        const encodedData = btoa(encodeURIComponent(JSON.stringify(dataToEmbed)));
+        const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
+        
+        // 容量チェック
+        if (!checkStorageUsage()) {
+            // 容量不足の場合は圧縮を試行
+            showAdminError('容量不足のため、画像を圧縮してデータを再生成します...');
+            
+            // 画像を再圧縮
+            const compressedQuestions = parsedData.questions.map(q => ({
+                ...q,
+                image: q.image // 既に圧縮済みの場合はそのまま使用
+            }));
+            
+            const compressedData = {
+                ...dataToEmbed,
+                questions: compressedQuestions
+            };
+            
+            const compressedEncodedData = btoa(encodeURIComponent(JSON.stringify(compressedData)));
+            const compressedDataUrl = `${window.location.origin}${window.location.pathname}?data=${compressedEncodedData}`;
+            
+            // 更新して保存
+            parsedData.encodedData = compressedEncodedData;
+            parsedData.dataUrl = compressedDataUrl;
+        } else {
+            // 通常の保存
+            parsedData.encodedData = encodedData;
+            parsedData.dataUrl = dataUrl;
+        }
+        
+        localStorage.setItem(testKey, JSON.stringify(parsedData));
+        
+        // QRコードを再生成
+        generateQRCode(testCode);
+        
+        showAdminSuccess('データ埋め込み形式のQRコードを生成しました！');
+        
+    } catch (error) {
+        console.error('Force regenerate error:', error);
+        showAdminError('QRコード再生成に失敗しました: ' + error.message);
+    }
 }
 
 // デバッグ情報表示（開発者ツールが使えない場合用）
