@@ -345,7 +345,7 @@ async function studentLogin() {
         const testCodeKeys = allKeys.filter(key => key.startsWith('testCode_'));
         console.log('Found testCode keys:', testCodeKeys);
         
-        let activeTestCode = 'LOCAL';
+        let activeTestCode = null;
         
         if (testCodeKeys.length > 0) {
             // 最新のテストコードを取得
@@ -353,7 +353,11 @@ async function studentLogin() {
                 try {
                     const data = JSON.parse(localStorage.getItem(key));
                     console.log(`Data for ${key}:`, data);
-                    return { code: key.replace('testCode_', ''), lastUpdated: data.lastUpdated };
+                    return { 
+                        code: key.replace('testCode_', ''), 
+                        lastUpdated: data.lastUpdated || data.created,
+                        created: data.created
+                    };
                 } catch (e) {
                     console.error(`Error parsing ${key}:`, e);
                     return null;
@@ -369,10 +373,16 @@ async function studentLogin() {
                 console.log('Selected active test code:', activeTestCode);
                 console.log('Full test code data:', testCodes[0]);
             } else {
-                console.log('No valid test codes found, using LOCAL');
+                console.log('No valid test codes found');
             }
         } else {
             console.log('No testCode_ keys found in localStorage');
+        }
+        
+        // テストコードが見つからない場合は新しく生成
+        if (!activeTestCode) {
+            activeTestCode = generateShortId();
+            console.log('Generated new test code for student session:', activeTestCode);
         }
 
         // 新しい変数に設定
@@ -2205,7 +2215,7 @@ async function saveSubmissionResult() {
         console.log('currentTestData:', currentTestData);
         
         const finalStudentId = currentStudentId || studentId;
-        const finalTestCode = currentTestCode || 'LOCAL';
+        const finalTestCode = currentTestCode || generateShortId();
         const finalAnswers = userAnswers || (testData ? testData.answers : []);
         const finalQuestions = currentTestData ? currentTestData.questions : questions;
         const finalStartTime = testStartTime || startTime || new Date();
@@ -2254,9 +2264,8 @@ async function saveSubmissionResult() {
         localStorage.setItem('studentSubmissions', JSON.stringify(allFiltered));
         console.log('Submission saved to localStorage');
         
-        // 異なる端末からのアクセスの場合、クラウドストレージシミュレーション
-        // 実際にはここでサーバーAPIに送信すべきだが、GitHub Pagesでは代替手段を使用
-        if (finalTestCode !== 'LOCAL') {
+        // Firebase Storageに保存（クロスデバイス対応）
+        if (finalTestCode && finalTestCode.length > 0) {
             console.log('Cross-device submission detected, attempting alternative save...');
             
             // テストコード固有のキーで保存（異なる端末間で共有される可能性を高める）
