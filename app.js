@@ -761,6 +761,12 @@ function removeQuestion(index) {
 
 // 問題設定保存
 async function saveQuestions() {
+    // 🚨 保存前にLocalStorage容量チェック
+    if (!checkStorageQuota()) {
+        showAdminError('❌ 容量不足により保存できません。\n\n「全データをクリア」ボタンで古いデータを削除してください。');
+        return;
+    }
+    
     if (questions.length === 0) {
         showAdminError('問題が設定されていません。');
         return;
@@ -3044,6 +3050,100 @@ function clearAllResults() {
     }
 }
 
+// 🚨 緊急: LocalStorage容量管理機能
+function checkStorageQuota() {
+    try {
+        const used = JSON.stringify(localStorage).length;
+        const usedMB = (used / (1024 * 1024)).toFixed(2);
+        console.log(`📊 LocalStorage使用量: ${usedMB}MB / ~5MB制限`);
+        
+        if (used > 4 * 1024 * 1024) { // 4MB以上で警告
+            const shouldClear = confirm(`🚨 STORAGE容量不足警告\n\n現在の使用量: ${usedMB}MB (制限: ~5MB)\n\n【対処方法】\n✅ OK → 古いデータを自動削除\n❌ キャンセル → 手動で対処\n\n※このままでは新しいテストが保存できません`);
+            
+            if (shouldClear) {
+                emergencyCleanStorage();
+            }
+            return false;
+        } else if (used > 3 * 1024 * 1024) { // 3MB以上で注意
+            console.warn(`⚠️ Storage使用量注意: ${usedMB}MB`);
+        }
+        return true;
+    } catch (error) {
+        console.error('Storage quota check failed:', error);
+        return false;
+    }
+}
+
+function emergencyCleanStorage() {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    let deletedCount = 0;
+    let deletedSizeMB = 0;
+    
+    console.log('🧹 緊急ストレージクリーニング開始...');
+    
+    Object.keys(localStorage).forEach(key => {
+        const itemSize = localStorage.getItem(key).length;
+        let shouldDelete = false;
+        
+        try {
+            // 古いテストコードを削除
+            if (key.startsWith('testCode_')) {
+                const data = JSON.parse(localStorage.getItem(key));
+                const lastUpdated = new Date(data.lastUpdated || 0);
+                
+                if (lastUpdated < sevenDaysAgo) {
+                    shouldDelete = true;
+                }
+            }
+            
+            // 古い学生データを削除
+            if (key.startsWith('submissions_') || key.startsWith('answers_')) {
+                const data = JSON.parse(localStorage.getItem(key));
+                if (data.timestamp) {
+                    const submissionDate = new Date(data.timestamp);
+                    if (submissionDate < sevenDaysAgo) {
+                        shouldDelete = true;
+                    }
+                } else {
+                    // タイムスタンプがないデータは削除
+                    shouldDelete = true;
+                }
+            }
+            
+            // 破損したデータやサイズが大きすぎるデータ
+            if (itemSize > 1024 * 1024) { // 1MB以上のアイテム
+                console.warn(`Large item found: ${key} (${(itemSize/1024/1024).toFixed(2)}MB)`);
+                if (key.startsWith('testCode_') || key.startsWith('submissions_')) {
+                    shouldDelete = true;
+                }
+            }
+            
+        } catch (error) {
+            // JSON解析エラー = 破損データなので削除
+            shouldDelete = true;
+            console.log(`Corrupted data detected: ${key}`);
+        }
+        
+        if (shouldDelete) {
+            localStorage.removeItem(key);
+            deletedCount++;
+            deletedSizeMB += itemSize / (1024 * 1024);
+            console.log(`🗑️ Deleted: ${key}`);
+        }
+    });
+    
+    const newUsed = JSON.stringify(localStorage).length;
+    const newUsedMB = (newUsed / (1024 * 1024)).toFixed(2);
+    const freedMB = deletedSizeMB.toFixed(2);
+    
+    showAdminSuccess(`🧹 ストレージクリーニング完了\n\n📊 削除項目: ${deletedCount}件\n💾 解放容量: ${freedMB}MB\n📊 現在使用量: ${newUsedMB}MB\n\n✅ 新しいテストを作成できます！`);
+    
+    // ページリロードで反映
+    setTimeout(() => {
+        location.reload();
+    }, 3000);
+}
+
 
 
 // ========== 初期化処理 ==========
@@ -3082,4 +3182,5 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 初期画面設定
     showScreen('login');
 });
+
 
