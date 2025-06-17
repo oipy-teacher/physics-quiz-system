@@ -42,18 +42,31 @@ service firebase.storage {
 
 ## 5. アプリ設定ファイル更新
 
-`app.js`の`firebaseConfig`を実際の設定に置き換える：
+`app.js`の6行目付近の`firebaseConfig`を実際の設定に置き換える：
 
 ```javascript
+// 現在（空の状態）
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
+};
+
+// ↓ 実際の設定に変更（例）
+const firebaseConfig = {
+    apiKey: "AIzaSyBxYYlG1RP0ZxFyZOuPQ3-YOUR-ACTUAL-KEY",
     authDomain: "your-project.firebaseapp.com",
     projectId: "your-project-id",
     storageBucket: "your-project.appspot.com",
     messagingSenderId: "123456789",
-    appId: "your-app-id"
+    appId: "1:123456789:web:your-app-id"
 };
 ```
+
+⚠️ **重要**: Firebase Consoleの「プロジェクト設定」で表示される設定をそのままコピー&ペーストしてください。
 
 ## 6. 機能テスト
 

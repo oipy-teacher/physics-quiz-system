@@ -40,14 +40,15 @@ let gradingResults = [];
 // 管理者パスワード（実際の運用では環境変数やサーバー側で管理）
 const ADMIN_PASSWORD = 'physics2024';
 
-// Firebase設定
+// Firebase設定（実際のプロジェクト設定に置き換えてください）
 const firebaseConfig = {
-    apiKey: "AIzaSyBxYYlG1RP0ZxFyZOuPQ3-demo-key-xyz",
-    authDomain: "physics-quiz-demo.firebaseapp.com", 
-    projectId: "physics-quiz-demo",
-    storageBucket: "physics-quiz-demo.appspot.com",
-    messagingSenderId: "123456789",
-    appId: "1:123456789:web:demo-app-id"
+    // デモ設定 - 実際のFirebase設定に置き換える必要があります
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
 };
 
 // Firebase初期化
@@ -57,6 +58,13 @@ let isFirebaseAvailable = false;
 
 function initFirebase() {
     try {
+        // Firebase設定が空の場合はスキップ
+        if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+            console.log('Firebase config is empty - Firebase features disabled');
+            isFirebaseAvailable = false;
+            return;
+        }
+        
         if (typeof firebase !== 'undefined') {
             firebaseApp = firebase.initializeApp(firebaseConfig);
             firebaseStorage = firebase.storage();
@@ -64,6 +72,7 @@ function initFirebase() {
             console.log('Firebase initialized successfully');
         } else {
             console.warn('Firebase SDK not loaded');
+            isFirebaseAvailable = false;
         }
     } catch (error) {
         console.warn('Firebase initialization failed:', error);
@@ -2205,11 +2214,20 @@ async function saveSubmissionResult() {
         console.log('Verification - submissions after save:', savedSubmissions);
         
         // Firebase Storageに画像をアップロード
+        let firebaseMessage = '';
         if (isFirebaseAvailable) {
-            await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
+            try {
+                await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
+                firebaseMessage = '\n✅ Firebase Storageに画像もアップロードしました！';
+            } catch (error) {
+                console.error('Firebase upload failed:', error);
+                firebaseMessage = '\n⚠️ Firebase Storageへのアップロードに失敗しましたが、ローカル保存は完了しています。';
+            }
+        } else {
+            firebaseMessage = '\n📝 ローカルに保存しました（Firebase未設定）';
         }
         
-        alert(`提出完了！学籍番号: ${finalStudentId} の解答を保存しました。`);
+        alert(`提出完了！学籍番号: ${finalStudentId} の解答を保存しました。${firebaseMessage}`);
         
     } catch (error) {
         console.error('Failed to save submission:', error);
@@ -2671,7 +2689,7 @@ async function loadJSZip() {
 // Firebase画像一括ダウンロード（教員専用）
 async function downloadFirebaseImages() {
     if (!isFirebaseAvailable || !firebaseStorage) {
-        showAdminError('Firebase Storageが利用できません。Firebase設定を確認してください。');
+        showAdminError('Firebase Storageが利用できません。\n\n📋 設定手順:\n1. Firebase Consoleでプロジェクト作成\n2. Storage有効化\n3. app.jsのfirebaseConfig更新\n\n詳細: FIREBASE_SETUP.mdを参照');
         return;
     }
     
