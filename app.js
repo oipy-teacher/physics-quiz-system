@@ -2864,48 +2864,79 @@ async function selectTestCodeForDownload(testCode) {
                 try {
                     console.log(`Downloading: ${fileRef.fullPath}`);
                     
-                    // Firebase SDK の getBytes() メソッドを使用してCORS回避
                     let blob;
+                    let downloadSuccess = false;
+                    
+                    // 方法1: Firebase v9の新しいAPI (getBytes)
                     try {
-                        // 新しいFirebase v9の場合
-                        const maxDownloadSizeBytes = 50 * 1024 * 1024; // 50MB
-                        const arrayBuffer = await fileRef.getBytes ? await fileRef.getBytes(maxDownloadSizeBytes) : null;
-                        if (arrayBuffer) {
-                            blob = new Blob([arrayBuffer]);
-                        } else {
-                            throw new Error('getBytes not available');
+                        if (typeof firebase !== 'undefined' && firebase.storage) {
+                            // Firebase v8以前の場合
+                            const downloadURL = await fileRef.getDownloadURL();
+                            console.log(`Got download URL: ${downloadURL}`);
+                            
+                                                         // Blobを直接ダウンロード (Firebase Storage はCORS設定済み)
+                             const response = await fetch(downloadURL, {
+                                 method: 'GET',
+                                 mode: 'cors',
+                                 cache: 'no-cache',
+                                 credentials: 'omit',
+                                 headers: {
+                                     'Accept': '*/*'
+                                 }
+                             });
+                            
+                                                         if (response.ok) {
+                                 blob = await response.blob();
+                                 downloadSuccess = true;
+                                 console.log(`Successfully downloaded directly: ${fileRef.name} (${blob.size} bytes)`);
+                             } else {
+                                 throw new Error(`First fetch failed: ${response.status}`);
+                             }
                         }
-                    } catch (getBytesError) {
-                        console.log('getBytes failed, trying alternative method:', getBytesError);
+                                         } catch (firstError) {
+                         console.log('First method failed:', firstError);
                         
-                        // 代替方法: XMLHttpRequest with credentials
-                        const downloadURL = await fileRef.getDownloadURL();
-                        blob = await new Promise((resolve, reject) => {
-                            const xhr = new XMLHttpRequest();
-                            xhr.responseType = 'blob';
-                            xhr.onload = () => {
-                                if (xhr.status === 200) {
-                                    resolve(xhr.response);
-                                } else {
-                                    reject(new Error(`HTTP ${xhr.status}`));
-                                }
-                            };
-                            xhr.onerror = () => reject(new Error('Network error'));
-                            xhr.open('GET', downloadURL);
-                            xhr.send();
-                        });
+                        // 方法2: 直接ダウンロード（同一オリジン）
+                        try {
+                            const downloadURL = await fileRef.getDownloadURL();
+                            
+                            // Firebase Storage トークンを含むURLを直接使用
+                            const response = await fetch(downloadURL, {
+                                method: 'GET',
+                                mode: 'cors',
+                                credentials: 'omit'
+                            });
+                            
+                            if (response.ok) {
+                                blob = await response.blob();
+                                downloadSuccess = true;
+                                console.log(`Successfully downloaded directly: ${fileRef.name}`);
+                            } else {
+                                throw new Error(`Direct fetch failed: ${response.status}`);
+                            }
+                        } catch (directError) {
+                            console.log('Direct download failed:', directError);
+                            
+                            // 方法3: ダウンロード情報のみ提供
+                            const downloadURL = await fileRef.getDownloadURL();
+                            const infoText = `ファイル: ${fileRef.name}\nダウンロードURL: ${downloadURL}\n\n手動ダウンロード手順:\n1. 上記URLをコピー\n2. 新しいタブで開く\n3. 右クリック → 名前を付けて保存\n\n作成日時: ${new Date().toLocaleString()}`;
+                            
+                            studentFolder.file(`${fileRef.name}_DOWNLOAD_INFO.txt`, infoText);
+                            processedFiles++;
+                            console.log(`Created download info for: ${fileRef.name}`);
+                            return; // この反復を終了
+                        }
                     }
                     
                     // ファイルサイズチェック
-                    if (blob.size === 0) {
-                        throw new Error('Empty file downloaded');
+                    if (downloadSuccess && blob && blob.size > 0) {
+                        // ZIPに追加
+                        studentFolder.file(fileRef.name, blob);
+                        processedFiles++;
+                        console.log(`Successfully added to ZIP: ${fileRef.name} (${blob.size} bytes)`);
+                    } else {
+                        throw new Error('No valid blob data obtained');
                     }
-                    
-                    // ZIPに追加
-                    studentFolder.file(fileRef.name, blob);
-                    processedFiles++;
-                    
-                    console.log(`Successfully downloaded: ${fileRef.name} (${blob.size} bytes)`);
                     
                     // 進捗表示
                     if (processedFiles % 3 === 0 || processedFiles === totalFiles) {
@@ -2914,9 +2945,16 @@ async function selectTestCodeForDownload(testCode) {
                     
                 } catch (error) {
                     console.error(`Failed to download ${fileRef.fullPath}:`, error);
-                    // エラーファイルは詳細情報として追加
-                    const errorInfo = `ダウンロードエラー: ${error.message}\n\nファイル: ${fileRef.fullPath}\n時刻: ${new Date().toLocaleString()}\n\nこのファイルは Firebase Console から手動でダウンロードしてください:\nhttps://console.firebase.google.com/project/physics-quiz-app/storage`;
-                    studentFolder.file(`${fileRef.name}_ERROR.txt`, errorInfo);
+                    
+                    // エラー時は手動ダウンロード用の情報を提供
+                    try {
+                        const downloadURL = await fileRef.getDownloadURL();
+                        const errorInfo = `ダウンロードエラー: ${error.message}\n\nファイル: ${fileRef.name}\nパス: ${fileRef.fullPath}\n\n手動ダウンロード用URL:\n${downloadURL}\n\n手順:\n1. 上記URLをコピー\n2. 新しいタブで開いてダウンロード\n\nエラー発生時刻: ${new Date().toLocaleString()}`;
+                        studentFolder.file(`${fileRef.name}_DOWNLOAD_INFO.txt`, errorInfo);
+                    } catch (urlError) {
+                        const errorInfo = `ダウンロードエラー: ${error.message}\nURL取得エラー: ${urlError.message}\n\nFirebase Console から手動でダウンロードしてください:\nhttps://console.firebase.google.com/project/physics-quiz-app/storage\n\nエラー発生時刻: ${new Date().toLocaleString()}`;
+                        studentFolder.file(`${fileRef.name}_ERROR.txt`, errorInfo);
+                    }
                     processedFiles++;
                 }
             }
