@@ -2138,7 +2138,27 @@ async function saveSubmissionResult() {
         console.log('currentTestData:', currentTestData);
         
         const finalStudentId = currentStudentId || studentId;
-        const finalTestCode = currentTestCode || 'LOCAL';
+        
+        // 実際のテストコードを取得
+        let finalTestCode = currentTestCode;
+        if (!finalTestCode) {
+            // URLパラメータからテストコードを取得
+            const urlParams = new URLSearchParams(window.location.search);
+            finalTestCode = urlParams.get('code');
+        }
+        if (!finalTestCode) {
+            // ローカルストレージから最新のテストコードを取得
+            const allKeys = Object.keys(localStorage).filter(key => key.startsWith('testCode_'));
+            if (allKeys.length > 0) {
+                const latestKey = allKeys.sort().pop();
+                finalTestCode = latestKey.replace('testCode_', '');
+            }
+        }
+        // どうしても取得できない場合のみLOCALを使用
+        finalTestCode = finalTestCode || 'LOCAL';
+        
+        console.log('Determined finalTestCode:', finalTestCode);
+        
         const finalAnswers = userAnswers || (testData ? testData.answers : []);
         const finalQuestions = currentTestData ? currentTestData.questions : questions;
         const finalStartTime = testStartTime || startTime || new Date();
