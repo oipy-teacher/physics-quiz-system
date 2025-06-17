@@ -141,18 +141,24 @@ async function testCodeLogin() {
         
         // データが見つからない場合の対処
         if (!data) {
-            errorDiv.innerHTML = `
-                <div style="text-align: left;">
-                    <strong>テストコードが見つかりません。</strong><br><br>
-                    <strong>解決方法：</strong><br>
-                    1. 教員から受け取ったQRコードをスキャンしてください<br>
-                    2. または、教員から受け取った完全なURLにアクセスしてください<br>
-                    3. テストコードのみでは別端末からアクセスできません<br><br>
-                    <em>※ QRコードまたは完全URLにテストデータが含まれています</em>
-                </div>
-            `;
-            errorDiv.style.display = 'block';
-            return;
+            // URLパラメータから直接読み込みを試行
+            if (currentTestData && currentTestData.questions && currentTestData.questions.length > 0) {
+                console.log('Using pre-loaded data from URL');
+                data = currentTestData;
+            } else {
+                errorDiv.innerHTML = `
+                    <div style="text-align: left;">
+                        <strong>テストコードが見つかりません。</strong><br><br>
+                        <strong>解決方法：</strong><br>
+                        1. 教員から受け取ったQRコードをスキャンしてください<br>
+                        2. または、教員から受け取った完全なURLにアクセスしてください<br>
+                        3. テストコードのみでは別端末からアクセスできません<br><br>
+                        <em>※ QRコードまたは完全URLにテストデータが含まれています</em>
+                    </div>
+                `;
+                errorDiv.style.display = 'block';
+                return;
+            }
         }
         
         if (!data.questions || data.questions.length === 0) {
@@ -171,6 +177,10 @@ async function testCodeLogin() {
         currentTestCode = testCode;
         currentTestData = data;
         studentId = studentIdInput; // 後方互換性のため
+
+        console.log('Test started with test code:', testCode);
+        console.log('Student ID:', studentIdInput);
+        console.log('Questions loaded:', questions.length);
 
         errorDiv.style.display = 'none';
         showScreen('test');
@@ -1381,6 +1391,44 @@ function loadQuestionsFromUrl() {
             localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
             localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
             localStorage.setItem('physicsQuizEnabled', testEnabled.toString());
+            
+            // QRコード/URLからアクセスした場合は自動的にテストコードログインモードに
+            if (dataParam || testCode) {
+                console.log('Auto-redirecting to test code login for students...');
+                
+                // テストコードを設定（URLパラメータから取得またはデータから生成）
+                const autoTestCode = testCode || data.testCode || 'DIRECT';
+                
+                // currentTestDataを設定
+                currentTestData = data;
+                currentTestCode = autoTestCode;
+                
+                // 少し待ってからテストコードログイン画面を表示
+                setTimeout(() => {
+                    if (document.getElementById('loginScreen') && window.location.pathname.endsWith('.html')) {
+                        showTestCodeLogin();
+                        
+                        // テストコード入力欄に自動入力
+                        const testCodeInput = document.getElementById('testCodeInput');
+                        if (testCodeInput && autoTestCode !== 'DIRECT') {
+                            testCodeInput.value = autoTestCode;
+                        }
+                        
+                        // 案内メッセージを表示
+                        const errorDiv = document.getElementById('loginError');
+                        if (errorDiv) {
+                            errorDiv.innerHTML = `
+                                <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; color: #155724;">
+                                    <h4 style="margin: 0 0 10px 0;">📱 QRコードからアクセスしました</h4>
+                                    <p style="margin: 0;">学籍番号を入力してテストを開始してください。</p>
+                                    ${autoTestCode !== 'DIRECT' ? `<p style="margin: 5px 0 0 0; font-size: 12px;">テストコード: <strong>${autoTestCode}</strong></p>` : ''}
+                                </div>
+                            `;
+                            errorDiv.style.display = 'block';
+                        }
+                    }
+                }, 100);
+            }
             
             // URLから直接テスト画面に遷移する場合のCanvas初期化
             if (window.location.hash === '#test' || document.getElementById('testScreen')) {
