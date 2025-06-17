@@ -1103,20 +1103,44 @@ function generateQRCode(testCode) {
     if (testData) {
         try {
             const parsedData = JSON.parse(testData);
-            console.log('Parsed test data:', parsedData);
+            console.log('Parsed test data structure:', {
+                hasDataUrl: !!parsedData.dataUrl,
+                hasEncodedData: !!parsedData.encodedData,
+                hasQuestions: !!parsedData.questions,
+                questionsCount: parsedData.questions ? parsedData.questions.length : 0
+            });
             
+            // データ埋め込みURLを最優先で使用
             if (parsedData.dataUrl) {
-                // データ埋め込みURLを使用（最優先）
                 targetUrl = parsedData.dataUrl;
                 console.log('Using embedded data URL');
             } else if (parsedData.encodedData) {
-                // エンコードされたデータからURLを再構築
                 targetUrl = `${window.location.origin}${window.location.pathname}?data=${parsedData.encodedData}`;
                 console.log('Using encoded data URL');
+            } else if (parsedData.questions && parsedData.questions.length > 0) {
+                // 問題データがあるが埋め込みURLがない場合は、その場で生成
+                console.log('Generating embedded URL from existing questions...');
+                const dataToEmbed = {
+                    questions: parsedData.questions,
+                    answerExamples: parsedData.answerExamples || [],
+                    testEnabled: true,
+                    testCode: testCode,
+                    created: parsedData.created || new Date().toISOString()
+                };
+                
+                const encodedData = btoa(encodeURIComponent(JSON.stringify(dataToEmbed)));
+                targetUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
+                
+                // 今後のために保存
+                parsedData.encodedData = encodedData;
+                parsedData.dataUrl = targetUrl;
+                localStorage.setItem(testKey, JSON.stringify(parsedData));
+                
+                console.log('Generated and saved embedded URL');
             } else {
                 // テストコード方式（フォールバック）
                 targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
-                console.log('Using test code URL (fallback)');
+                console.log('Using test code URL (fallback - no questions found)');
             }
         } catch (e) {
             console.error('Error parsing test data:', e);
@@ -3069,6 +3093,48 @@ function startDebugTest() {
     };
     
     showDebugInfo('デバッグテスト開始', urlInfo);
+    
+    // URLからテストコードを抽出してローカルデータを確認
+    const urlParams = new URLSearchParams(window.location.search);
+    const testCode = urlParams.get('code');
+    
+    if (testCode) {
+        const testKey = `testCode_${testCode}`;
+        const testData = localStorage.getItem(testKey);
+        
+        if (testData) {
+            try {
+                const parsedData = JSON.parse(testData);
+                showDebugInfo('ローカルテストデータ確認', {
+                    'テストコード': testCode,
+                    '問題数': parsedData.questions ? parsedData.questions.length : 0,
+                    'データURL有無': parsedData.dataUrl ? 'あり' : 'なし',
+                    'エンコードデータ有無': parsedData.encodedData ? 'あり' : 'なし',
+                    '作成日時': parsedData.created || '不明'
+                });
+                
+                // データがあるのにURLにdataパラメータがない場合の修正提案
+                if (parsedData.questions && parsedData.questions.length > 0 && !urlParams.get('data')) {
+                    showDebugInfo('修正提案', {
+                        '問題': 'ローカルに問題データがあるがURLに埋め込まれていない',
+                        '対処法': '教員側でQRコードを再生成してください',
+                        '推奨': 'データ埋め込み形式のQRコードを使用'
+                    });
+                }
+            } catch (e) {
+                showDebugInfo('ローカルデータエラー', {
+                    'エラー': 'データの解析に失敗',
+                    '詳細': e.message
+                });
+            }
+        } else {
+            showDebugInfo('ローカルデータ確認', {
+                'テストコード': testCode,
+                '結果': 'データが見つかりません',
+                '対処法': '教員側で問題を設定してください'
+            });
+        }
+    }
     
     // QRコード読み込み処理を再実行
     const urlLoaded = loadQuestionsFromUrl();
