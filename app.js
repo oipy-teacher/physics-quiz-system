@@ -42,7 +42,7 @@ const ADMIN_PASSWORD = 'physics2024';
 
 // Firebase設定（実際のプロジェクト設定に置き換えてください）
 const firebaseConfig = {
-    apiKey: "AIzaSy5Hw_vhizEaXgoWQNlgVM0uAudPjsoPo",
+    apiKey: "AIzaSy5Hw_vhizEaXgoWQNlgVM0uAudPjsoPoh8",
     authDomain: "physics-quiz-app.firebaseapp.com",
     projectId: "physics-quiz-app",
     storageBucket: "physics-quiz-app.firebasestorage.app",
@@ -2249,21 +2249,20 @@ async function saveSubmissionResult() {
         const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
         console.log('Verification - submissions after save:', savedSubmissions);
         
-        // Firebase Storageに画像をアップロード
-        let firebaseMessage = '';
-        if (isFirebaseAvailable) {
-            try {
-                await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
-                firebaseMessage = '\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能';
-        } catch (error) {
-                console.error('Firebase upload failed:', error);
-                firebaseMessage = '\n\n⚠️ Firebase Storageへのアップロードに失敗\nローカル保存は完了しています';
-            }
-        } else {
-            firebaseMessage = '\n\n📝 ローカルに保存しました\n⚙️ Firebase設定で教員への画像共有が可能\n詳細: FIREBASE_QUICK_SETUP.md参照';
-        }
+        // 必ずアラート表示（ローカル保存は既に完了）
+        alert(`🎉 提出完了！\n学籍番号: ${finalStudentId}\n\n📝 解答データが正常に保存されました`);
         
-        alert(`🎉 提出完了！\n学籍番号: ${finalStudentId}${firebaseMessage}`);
+        // Firebase Storageに画像をアップロード（バックグラウンドで実行、失敗してもエラー表示しない）
+        if (isFirebaseAvailable) {
+            uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers)
+                .then(() => {
+                    console.log('✅ Firebase Storageに画像もアップロードしました！');
+                })
+                .catch((error) => {
+                    console.error('Firebase upload failed:', error);
+                    console.log('⚠️ Firebase Storageへのアップロードに失敗しましたが、ローカル保存は完了しています');
+                });
+        }
         
     } catch (error) {
         console.error('Failed to save submission:', error);
