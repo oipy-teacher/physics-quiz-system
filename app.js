@@ -257,7 +257,7 @@ function showScreen(screen) {
 // ========== 教員用機能 ==========
 
 // 画像圧縮関数（localStorageの容量制限対策）
-function compressImage(dataUrl, callback, quality = 0.6, maxWidth = 800, maxHeight = 600) {
+function compressImage(dataUrl, callback, quality = 0.3, maxWidth = 400, maxHeight = 300) {
     const img = new Image();
     img.onload = function() {
         const canvas = document.createElement('canvas');
@@ -1183,9 +1183,14 @@ function generateQRCode(testCode) {
                 // 今後のために保存
                 parsedData.encodedData = encodedData;
                 parsedData.dataUrl = targetUrl;
-                localStorage.setItem(testKey, JSON.stringify(parsedData));
-                
-                console.log('Generated and saved embedded URL');
+                try {
+                    localStorage.setItem(testKey, JSON.stringify(parsedData));
+                    console.log('Generated and saved embedded URL');
+                } catch (storageError) {
+                    console.error('Storage quota exceeded, using temporary URL');
+                    // 容量不足の場合は保存せずにURLのみ使用
+                    console.log('Using temporary embedded URL without saving');
+                }
             } else {
                 // テストコード方式（フォールバック）
                 targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
@@ -1229,6 +1234,9 @@ function generateQRCode(testCode) {
                     ⚠️ テストコード形式では別端末からアクセスできません<br>
                     <button onclick="forceRegenerateDataURL('${testCode}')" style="background: #ffc107; color: #212529; border: none; padding: 5px 10px; border-radius: 3px; margin-top: 5px; cursor: pointer;">
                         データ埋め込み形式で再生成
+                    </button>
+                    <button onclick="generateLightweightQR('${testCode}')" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 3px; margin: 5px 0 0 5px; cursor: pointer;">
+                        軽量版で強制生成
                     </button>
                 </div>
             ` : ''}
@@ -3085,6 +3093,87 @@ function forceRegenerateDataURL(testCode) {
     } catch (error) {
         console.error('Force regenerate error:', error);
         showAdminError('QRコード再生成に失敗しました: ' + error.message);
+    }
+}
+
+// 軽量版QR生成（容量制限回避）
+function generateLightweightQR(testCode) {
+    const testKey = `testCode_${testCode}`;
+    const testData = localStorage.getItem(testKey);
+    
+    if (!testData) {
+        showAdminError('テストデータが見つかりません。');
+        return;
+    }
+    
+    try {
+        const parsedData = JSON.parse(testData);
+        
+        if (!parsedData.questions || parsedData.questions.length === 0) {
+            showAdminError('問題データが見つかりません。');
+            return;
+        }
+        
+        // 超軽量版データを作成（画像を大幅圧縮）
+        const lightweightQuestions = [];
+        
+        let processedCount = 0;
+        
+        parsedData.questions.forEach((question, index) => {
+            // 画像をさらに圧縮
+            compressImage(question.image, (superCompressed) => {
+                lightweightQuestions[index] = {
+                    ...question,
+                    image: superCompressed
+                };
+                processedCount++;
+                
+                // 全ての画像処理が完了したら続行
+                if (processedCount === parsedData.questions.length) {
+                    finalizeLightweightQR();
+                }
+            }, 0.1, 200, 150); // 超低品質・超小サイズ
+        });
+        
+        function finalizeLightweightQR() {
+            const lightweightData = {
+                questions: lightweightQuestions,
+                answerExamples: [], // 解答例は除外
+                testEnabled: true,
+                testCode: testCode,
+                created: new Date().toISOString()
+            };
+            
+            const encodedData = btoa(encodeURIComponent(JSON.stringify(lightweightData)));
+            const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
+            
+            console.log(`Lightweight QR data size: ${Math.round(encodedData.length/1024)}KB`);
+            
+            // QRコードを直接表示（localStorageに保存しない）
+            const qrContainer = document.getElementById('qrcode');
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(dataUrl)}`;
+            
+            qrContainer.innerHTML = `
+                <div style="text-align: center;">
+                    <img src="${qrUrl}" alt="QRコード" style="border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;">
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        テストコード: <strong>${testCode}</strong>
+                    </div>
+                    <div style="font-size: 11px; color: #28a745; margin-top: 5px; font-weight: bold;">
+                        🔗 軽量データ埋め込み形式
+                    </div>
+                    <div style="font-size: 10px; color: #999; margin-top: 5px;">
+                        画像品質を下げて容量を削減しました
+                    </div>
+                </div>
+            `;
+            
+            showAdminSuccess('軽量版のデータ埋め込みQRコードを生成しました！');
+        }
+        
+    } catch (error) {
+        console.error('Lightweight QR generation error:', error);
+        showAdminError('軽量版QRコード生成に失敗しました: ' + error.message);
     }
 }
 
