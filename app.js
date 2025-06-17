@@ -2864,16 +2864,48 @@ async function selectTestCodeForDownload(testCode) {
                 try {
                     console.log(`Downloading: ${fileRef.fullPath}`);
                     
-                    // ファイルのダウンロードURLを取得
-                    const downloadURL = await fileRef.getDownloadURL();
+                    // Firebase SDK の getBytes() メソッドを使用してCORS回避
+                    let blob;
+                    try {
+                        // 新しいFirebase v9の場合
+                        const maxDownloadSizeBytes = 50 * 1024 * 1024; // 50MB
+                        const arrayBuffer = await fileRef.getBytes ? await fileRef.getBytes(maxDownloadSizeBytes) : null;
+                        if (arrayBuffer) {
+                            blob = new Blob([arrayBuffer]);
+                        } else {
+                            throw new Error('getBytes not available');
+                        }
+                    } catch (getBytesError) {
+                        console.log('getBytes failed, trying alternative method:', getBytesError);
+                        
+                        // 代替方法: XMLHttpRequest with credentials
+                        const downloadURL = await fileRef.getDownloadURL();
+                        blob = await new Promise((resolve, reject) => {
+                            const xhr = new XMLHttpRequest();
+                            xhr.responseType = 'blob';
+                            xhr.onload = () => {
+                                if (xhr.status === 200) {
+                                    resolve(xhr.response);
+                                } else {
+                                    reject(new Error(`HTTP ${xhr.status}`));
+                                }
+                            };
+                            xhr.onerror = () => reject(new Error('Network error'));
+                            xhr.open('GET', downloadURL);
+                            xhr.send();
+                        });
+                    }
                     
-                    // fetch でファイルをダウンロード
-                    const response = await fetch(downloadURL);
-                    const blob = await response.blob();
+                    // ファイルサイズチェック
+                    if (blob.size === 0) {
+                        throw new Error('Empty file downloaded');
+                    }
                     
                     // ZIPに追加
                     studentFolder.file(fileRef.name, blob);
                     processedFiles++;
+                    
+                    console.log(`Successfully downloaded: ${fileRef.name} (${blob.size} bytes)`);
                     
                     // 進捗表示
                     if (processedFiles % 3 === 0 || processedFiles === totalFiles) {
@@ -2882,8 +2914,9 @@ async function selectTestCodeForDownload(testCode) {
                     
                 } catch (error) {
                     console.error(`Failed to download ${fileRef.fullPath}:`, error);
-                    // エラーファイルは情報として追加
-                    studentFolder.file(`${fileRef.name}_ERROR.txt`, `ダウンロードエラー: ${error.message}`);
+                    // エラーファイルは詳細情報として追加
+                    const errorInfo = `ダウンロードエラー: ${error.message}\n\nファイル: ${fileRef.fullPath}\n時刻: ${new Date().toLocaleString()}\n\nこのファイルは Firebase Console から手動でダウンロードしてください:\nhttps://console.firebase.google.com/project/physics-quiz-app/storage`;
+                    studentFolder.file(`${fileRef.name}_ERROR.txt`, errorInfo);
                     processedFiles++;
                 }
             }
