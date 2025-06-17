@@ -42,8 +42,13 @@ const ADMIN_PASSWORD = 'physics2024';
 
 // 初期化
 window.onload = function() {
-    // ローカルストレージから問題データを読み込む
-    loadSavedQuestions();
+    // URLからのデータ読み込みを最優先で実行
+    const hasUrlData = loadQuestionsFromUrl();
+    
+    // URLにデータがない場合のみローカルストレージから読み込み
+    if (!hasUrlData) {
+        loadSavedQuestions();
+    }
     
     // 学籍番号入力フィールドのイベント設定
     const studentIdInput = document.getElementById('studentId');
@@ -61,6 +66,25 @@ window.onload = function() {
         adminPasswordInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 adminLogin();
+            }
+        });
+    }
+
+    // テストコード入力フィールドのイベント設定
+    const testCodeInput = document.getElementById('testCodeInput');
+    if (testCodeInput) {
+        testCodeInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testCodeLogin();
+            }
+        });
+    }
+
+    const studentIdForCodeInput = document.getElementById('studentIdForCode');
+    if (studentIdForCodeInput) {
+        studentIdForCodeInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testCodeLogin();
             }
         });
     }
@@ -141,24 +165,18 @@ async function testCodeLogin() {
         
         // データが見つからない場合の対処
         if (!data) {
-            // URLパラメータから直接読み込みを試行
-            if (currentTestData && currentTestData.questions && currentTestData.questions.length > 0) {
-                console.log('Using pre-loaded data from URL');
-                data = currentTestData;
-            } else {
-                errorDiv.innerHTML = `
-                    <div style="text-align: left;">
-                        <strong>テストコードが見つかりません。</strong><br><br>
-                        <strong>解決方法：</strong><br>
-                        1. 教員から受け取ったQRコードをスキャンしてください<br>
-                        2. または、教員から受け取った完全なURLにアクセスしてください<br>
-                        3. テストコードのみでは別端末からアクセスできません<br><br>
-                        <em>※ QRコードまたは完全URLにテストデータが含まれています</em>
-                    </div>
-                `;
-                errorDiv.style.display = 'block';
-                return;
-            }
+            errorDiv.innerHTML = `
+                <div style="text-align: left;">
+                    <strong>テストコードが見つかりません。</strong><br><br>
+                    <strong>解決方法：</strong><br>
+                    1. 教員から受け取ったQRコードをスキャンしてください<br>
+                    2. または、教員から受け取った完全なURLにアクセスしてください<br>
+                    3. テストコードのみでは別端末からアクセスできません<br><br>
+                    <em>※ QRコードまたは完全URLにテストデータが含まれています</em>
+                </div>
+            `;
+            errorDiv.style.display = 'block';
+            return;
         }
         
         if (!data.questions || data.questions.length === 0) {
@@ -177,10 +195,6 @@ async function testCodeLogin() {
         currentTestCode = testCode;
         currentTestData = data;
         studentId = studentIdInput; // 後方互換性のため
-
-        console.log('Test started with test code:', testCode);
-        console.log('Student ID:', studentIdInput);
-        console.log('Questions loaded:', questions.length);
 
         errorDiv.style.display = 'none';
         showScreen('test');
@@ -211,24 +225,23 @@ async function studentLogin() {
     try {
         await loadSavedQuestions();
         
-                // 学籍番号のみでの受験を完全に無効化（セキュリティ強化）
-        errorDiv.innerHTML = `
-            <div style="text-align: left; padding: 20px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px;">
-                <h4 style="color: #856404; margin: 0 0 15px 0;">🔒 学籍番号のみでの受験は無効化されました</h4>
-                <strong>学生の方へ：</strong><br><br>
-                1. <strong>教員から配布されたQRコードをスキャン</strong>してください<br>
-                2. または、<strong>教員から受け取った完全なURL</strong>にアクセスしてください<br>
-                3. 上記方法で「📱 テストコードでログイン」を使用してください<br><br>
-                <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px;">
-                    <strong>🛡️ セキュリティのため：</strong><br>
-                    - 学籍番号のみでの受験は禁止されています<br>
-                    - 必ずテストコードまたはQRコードが必要です<br>
-                    - 不正受験を防ぐための措置です
+        // テストが設定されているかチェック
+        if (!testEnabled || questions.length === 0) {
+            errorDiv.innerHTML = `
+                <div style="text-align: left;">
+                    <strong>テストが設定されていません。</strong><br><br>
+                    <strong>学生の方へ：</strong><br>
+                    1. 教員から配布されたQRコードをスキャンしてください<br>
+                    2. または、教員から受け取った完全なURLにアクセスしてください<br><br>
+                    <em>※ 学籍番号のみでの受験は、教員が同一端末でテストを設定した場合のみ可能です</em>
                 </div>
-            </div>
-        `;
-        errorDiv.style.display = 'block';
-        return;
+            `;
+            errorDiv.style.display = 'block';
+            return;
+        }
+
+        // 同一端末でのテスト実行（管理者が設定済み）
+        console.log('Local test execution - same device as admin setup');
 
         // 新しい変数に設定
         currentStudentId = inputId;
@@ -1379,63 +1392,39 @@ function loadQuestionsFromUrl() {
             
             console.log('Questions loaded from URL:', questions.length);
             
+            // URLからロードした場合は、ローカルストレージにも保存
+            localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
+            localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
+            localStorage.setItem('physicsQuizEnabled', testEnabled.toString());
+            
+            // テストコードも一時保存（QRコード読み込み用）
+            if (data.testCode) {
+                const testKey = `testCode_${data.testCode}`;
+                localStorage.setItem(testKey, JSON.stringify(data));
+            }
+            
+            // QRコード読み込み後、学籍番号入力画面を表示
+            setTimeout(() => {
+                if (document.getElementById('loginScreen') && currentScreen === 'login') {
+                    console.log('QR code data loaded, showing test code login screen');
+                    showTestCodeLogin();
+                    
+                    // テストコードを自動入力
+                    if (data.testCode) {
+                        const testCodeInput = document.getElementById('testCodeInput');
+                        if (testCodeInput) {
+                            testCodeInput.value = data.testCode;
+                        }
+                    }
+                }
+            }, 500);
+            
             // 管理画面の場合は表示を更新
             if (document.getElementById('questionList')) {
                 renderQuestionList();
             }
             if (document.getElementById('answerExampleList')) {
                 renderAnswerExampleList();
-            }
-            
-            // URLからロードした場合は、ローカルストレージにも保存
-            localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
-            localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
-            localStorage.setItem('physicsQuizEnabled', testEnabled.toString());
-            
-            // QRコード/URLからアクセスした場合は自動的にテストコードログインモードに
-            if (dataParam || testCode) {
-                console.log('Auto-redirecting to test code login for students...');
-                
-                // テストコードを設定（URLパラメータから取得またはデータから生成）
-                const autoTestCode = testCode || data.testCode || 'DIRECT';
-                
-                // currentTestDataを設定
-                currentTestData = data;
-                currentTestCode = autoTestCode;
-                
-                // 少し待ってからテストコードログイン画面を表示
-                setTimeout(() => {
-                    if (document.getElementById('loginScreen') && window.location.pathname.endsWith('.html')) {
-                        showTestCodeLogin();
-                        
-                        // テストコード入力欄に自動入力
-                        const testCodeInput = document.getElementById('testCodeInput');
-                        if (testCodeInput && autoTestCode !== 'DIRECT') {
-                            testCodeInput.value = autoTestCode;
-                        }
-                        
-                        // 案内メッセージを表示
-                        const errorDiv = document.getElementById('loginError');
-                        if (errorDiv) {
-                            errorDiv.innerHTML = `
-                                <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; color: #155724;">
-                                    <h4 style="margin: 0 0 10px 0;">📱 QRコードからアクセスしました</h4>
-                                    <p style="margin: 0;">学籍番号を入力してテストを開始してください。</p>
-                                    ${autoTestCode !== 'DIRECT' ? `<p style="margin: 5px 0 0 0; font-size: 12px;">テストコード: <strong>${autoTestCode}</strong></p>` : ''}
-                                </div>
-                            `;
-                            errorDiv.style.display = 'block';
-                        }
-                    }
-                }, 100);
-            }
-            
-            // URLから直接テスト画面に遷移する場合のCanvas初期化
-            if (window.location.hash === '#test' || document.getElementById('testScreen')) {
-                setTimeout(() => {
-                    initCanvas();
-                    setInputMethod('canvas');
-                }, 200);
             }
             
             return true;
