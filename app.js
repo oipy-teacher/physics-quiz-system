@@ -2910,7 +2910,7 @@ function showNewSubmissionAlert(notification) {
 // デバッグ情報表示（開発者ツールが使えない場合用）
 function showDebugInfo(title, info) {
     // デバッグモードが有効でない場合は何もしない
-    if (!window.location.search.includes('debug=1')) {
+    if (!window.location.search.includes('debug=1') && !window.debugMode) {
         return;
     }
     
@@ -2980,6 +2980,120 @@ function showDebugInfo(title, info) {
     debugPanel.scrollTop = debugPanel.scrollHeight;
 }
 
+// タブレット用デバッグモード切り替え
+function setupMobileDebug() {
+    let tapCount = 0;
+    let tapTimer = null;
+    
+    // 画面を5回連続タップでデバッグモード有効
+    document.addEventListener('touchstart', function(e) {
+        // ログイン画面でのみ有効
+        if (currentScreen !== 'login') return;
+        
+        tapCount++;
+        
+        if (tapTimer) {
+            clearTimeout(tapTimer);
+        }
+        
+        if (tapCount >= 5) {
+            // デバッグモードを有効にする
+            window.debugMode = true;
+            
+            // デバッグボタンを表示
+            showMobileDebugPanel();
+            
+            tapCount = 0;
+        } else {
+            // 2秒以内に5回タップしなかった場合はリセット
+            tapTimer = setTimeout(() => {
+                tapCount = 0;
+            }, 2000);
+        }
+    });
+}
+
+// モバイル用デバッグパネル表示
+function showMobileDebugPanel() {
+    // 既存のパネルがあれば削除
+    const existingPanel = document.getElementById('mobileDebugPanel');
+    if (existingPanel) {
+        existingPanel.remove();
+    }
+    
+    const debugPanel = document.createElement('div');
+    debugPanel.id = 'mobileDebugPanel';
+    debugPanel.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #007aff;
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        z-index: 9999;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        text-align: center;
+    `;
+    
+    debugPanel.innerHTML = `
+        <div style="margin-bottom: 10px;">
+            🔧 デバッグモード有効
+        </div>
+        <button onclick="startDebugTest()" style="background: white; color: #007aff; border: none; padding: 8px 15px; border-radius: 5px; margin: 5px; cursor: pointer;">
+            QRコード動作テスト
+        </button>
+        <button onclick="clearDebugMode()" style="background: #ff3b30; color: white; border: none; padding: 8px 15px; border-radius: 5px; margin: 5px; cursor: pointer;">
+            デバッグ終了
+        </button>
+    `;
+    
+    document.body.appendChild(debugPanel);
+    
+    // 10秒後に自動で非表示（誤操作を避けるため）
+    setTimeout(() => {
+        if (debugPanel.parentElement) {
+            debugPanel.remove();
+        }
+    }, 10000);
+}
+
+// デバッグテスト開始
+function startDebugTest() {
+    // 現在のURLをチェック
+    const urlInfo = {
+        'URL': window.location.href,
+        'URLパラメータ': window.location.search || 'なし'
+    };
+    
+    showDebugInfo('デバッグテスト開始', urlInfo);
+    
+    // QRコード読み込み処理を再実行
+    const urlLoaded = loadQuestionsFromUrl();
+    
+    if (!urlLoaded) {
+        showDebugInfo('QRコード読み込み結果', {
+            '結果': '失敗',
+            '問題': 'URLにデータが含まれていません',
+            '対処法': 'QRコードを再スキャンしてください'
+        });
+    }
+}
+
+// デバッグモード終了
+function clearDebugMode() {
+    window.debugMode = false;
+    
+    // デバッグパネルを削除
+    const mobilePanel = document.getElementById('mobileDebugPanel');
+    const debugPanel = document.getElementById('debugPanel');
+    
+    if (mobilePanel) mobilePanel.remove();
+    if (debugPanel) debugPanel.remove();
+}
+
 // ========== 初期化処理 ==========
 
 // ページ読み込み完了時の初期化
@@ -2991,6 +3105,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     await loadSavedQuestions(); // この中でloadQuestionsFromUrl()が既に呼ばれる
     updateTestStatus();
     setupViolationDetection();
+    
+    // タブレット用デバッグ機能を初期化
+    setupMobileDebug();
     
     // 提出データやその他のURLパラメータを処理（QRコード処理後）
     setTimeout(() => {
