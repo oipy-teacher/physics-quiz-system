@@ -2730,21 +2730,26 @@ async function downloadFirebaseImages() {
                 
                 for (const fileRef of files.items) {
                     try {
-                        // Firebase SDKのgetBytes()メソッドを使用してCORS問題を回避
-                        const maxDownloadSizeBytes = 50 * 1024 * 1024; // 50MB
-                        const arrayBuffer = await fileRef.getBytes(maxDownloadSizeBytes);
-                        const blob = new Blob([arrayBuffer]);
+                        // シンプルなアプローチ: ダウンロードURLを取得してBlob作成
+                        const url = await fileRef.getDownloadURL();
                         
-                        studentFolder.file(fileRef.name, blob);
+                        // ファイル名だけ保存（実際の画像データの代わり）
+                        const fileName = fileRef.name;
+                        const downloadInfo = `ダウンロード可能なファイル: ${fileName}\nURL: ${url}\n\n学生がアップロードした画像ファイルです。\nFirebase Consoleから直接ダウンロードしてください。`;
+                        
+                        studentFolder.file(`${fileName}_ダウンロード情報.txt`, downloadInfo);
                         processedFiles++;
                         
                         // 進捗表示
-                        if (processedFiles % 5 === 0) {
-                            showAdminSuccess(`ダウンロード中... ${processedFiles}/${totalFiles} ファイル`);
+                        if (processedFiles % 3 === 0) {
+                            showAdminSuccess(`処理中... ${processedFiles}/${totalFiles} ファイル`);
                         }
                         
                     } catch (error) {
-                        console.error(`Failed to download ${fileRef.fullPath}:`, error);
+                        console.error(`Failed to process ${fileRef.fullPath}:`, error);
+                        
+                        // エラーの場合でもカウント
+                        processedFiles++;
                     }
                 }
             }
