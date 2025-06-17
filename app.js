@@ -42,13 +42,12 @@ const ADMIN_PASSWORD = 'physics2024';
 
 // Firebase設定（実際のプロジェクト設定に置き換えてください）
 const firebaseConfig = {
-    // デモ設定 - 実際のFirebase設定に置き換える必要があります
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSy5Hw_vhizEaXgoWQNlgVM0uAudPjsoPo",
+    authDomain: "physics-quiz-app.firebaseapp.com",
+    projectId: "physics-quiz-app",
+    storageBucket: "physics-quiz-app.firebasestorage.app",
+    messagingSenderId: "96107265429",
+    appId: "1:96107265429:web:dbaa46b9d23629cbc18dc6"
 };
 
 // Firebase初期化
