@@ -1308,6 +1308,14 @@ function loadQuestionsFromUrl() {
         const shareId = urlParams.get('id');
         const dataParam = urlParams.get('data'); // データ埋め込み形式
         
+        console.log('=== loadQuestionsFromUrl called ===');
+        console.log('Current URL:', window.location.href);
+        console.log('URL parameters found:', {
+            testCode: testCode,
+            shareId: shareId,
+            dataParam: dataParam ? 'present' : 'null'
+        });
+        
         let data = null;
         
         if (dataParam) {
@@ -2666,12 +2674,19 @@ function clearAllResults() {
 function checkUrlParameters() {
     const urlParams = new URLSearchParams(window.location.search);
     
-    // 提出データの受信
+    // 提出データの受信のみ処理（QRコード関連パラメータは除外）
     if (urlParams.has('submission')) {
         handleSubmissionReceived(urlParams.get('submission'));
+        return; // 提出データ処理後は他の処理をスキップ
     }
     
-    // 教員通知の確認
+    // QRコード関連パラメータがある場合は何もしない
+    if (urlParams.has('code') || urlParams.has('data') || urlParams.has('id')) {
+        console.log('QR code parameters detected, skipping submission check');
+        return;
+    }
+    
+    // 教員通知の確認（QRコードアクセスでない場合のみ）
     checkTeacherNotifications();
 }
 
@@ -2879,14 +2894,16 @@ function showNewSubmissionAlert(notification) {
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('Physics Quiz System initialized - Version 2.1');
     
-    // URLパラメータから提出データや他の情報を処理
-    checkUrlParameters();
-    
     // 管理画面の初期化
     setupDragAndDrop();
-    await loadSavedQuestions();
+    await loadSavedQuestions(); // この中でloadQuestionsFromUrl()が既に呼ばれる
     updateTestStatus();
     setupViolationDetection();
+    
+    // 提出データやその他のURLパラメータを処理（QRコード処理後）
+    setTimeout(() => {
+        checkUrlParameters();
+    }, 100);
     
     // キャンバス初期化（テスト画面表示時に実行）
     const testScreen = document.getElementById('testScreen');
