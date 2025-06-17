@@ -2261,13 +2261,30 @@ async function uploadImagesToFirebase(studentId, testCode, answers) {
             }
         }
         
-        // メタデータも保存
+        // 詳細なメタデータを保存（採点用データ含む）
         const metadata = {
             studentId: studentId,
             testCode: testCode,
             timestamp: new Date().toISOString(),
+            uploadedAt: new Date().toLocaleString('ja-JP'),
             questionCount: answers.length,
-            uploadedAt: new Date().toLocaleString('ja-JP')
+            answers: answers.map((answer, index) => ({
+                questionNumber: index + 1,
+                method: answer.method,
+                textAnswer: answer.method === 'text' ? answer.text : null,
+                hasHandwriting: answer.method === 'canvas' && answer.canvas ? true : false,
+                imageFileName: answer.method === 'canvas' && answer.canvas ? `question${index + 1}.png` : null
+            })),
+            testInfo: {
+                totalTime: window.totalTestTime || 0,
+                violations: window.violationCount || 0,
+                browser: navigator.userAgent,
+                deviceInfo: {
+                    platform: navigator.platform,
+                    language: navigator.language,
+                    screen: `${screen.width}x${screen.height}`
+                }
+            }
         };
         
         const metadataPath = `submissions/${testCode}/${studentId}/metadata.json`;
@@ -2693,94 +2710,84 @@ async function downloadFirebaseImages() {
     }
     
     try {
-        showAdminSuccess('Firebase画像をダウンロード中...');
+        showAdminSuccess('Firebase上の提出データを確認中...');
         
-        // JSZipライブラリを読み込み
-        await loadJSZip();
-        
-        const zip = new JSZip();
         const submissionsRef = firebaseStorage.ref('submissions');
         
         // すべてのテストコードフォルダを取得
         const testCodes = await submissionsRef.listAll();
         
         if (testCodes.prefixes.length === 0) {
-            showAdminError('Firebase上に提出画像が見つかりません。');
+            showAdminError('Firebase上に提出画像が見つかりません。学生がまだ提出していない可能性があります。');
             return;
         }
         
-        let totalFiles = 0;
-        let processedFiles = 0;
+        let fileCount = 0;
+        let testCodeList = [];
         
-        // 各テストコードごとに処理
+        // 各テストコードごとにファイル数を確認
         for (const testCodeRef of testCodes.prefixes) {
             const testCode = testCodeRef.name;
-            const testCodeFolder = zip.folder(testCode);
-            
-            // 各学生フォルダを取得
             const students = await testCodeRef.listAll();
             
+            let studentCount = 0;
             for (const studentRef of students.prefixes) {
-                const studentId = studentRef.name;
-                const studentFolder = testCodeFolder.folder(`学籍番号_${studentId}`);
-                
-                // 学生の全ファイルを取得
                 const files = await studentRef.listAll();
-                totalFiles += files.items.length;
-                
-                for (const fileRef of files.items) {
-                    try {
-                        // シンプルなアプローチ: ダウンロードURLを取得してBlob作成
-                        const url = await fileRef.getDownloadURL();
-                        
-                        // ファイル名だけ保存（実際の画像データの代わり）
-                        const fileName = fileRef.name;
-                        const downloadInfo = `ダウンロード可能なファイル: ${fileName}\nURL: ${url}\n\n学生がアップロードした画像ファイルです。\nFirebase Consoleから直接ダウンロードしてください。`;
-                        
-                        studentFolder.file(`${fileName}_ダウンロード情報.txt`, downloadInfo);
-                        processedFiles++;
-                        
-                        // 進捗表示
-                        if (processedFiles % 3 === 0) {
-                            showAdminSuccess(`処理中... ${processedFiles}/${totalFiles} ファイル`);
-                        }
-                        
-                    } catch (error) {
-                        console.error(`Failed to process ${fileRef.fullPath}:`, error);
-                        
-                        // エラーの場合でもカウント
-                        processedFiles++;
-                    }
-                }
+                fileCount += files.items.length;
+                studentCount++;
+            }
+            
+            if (studentCount > 0) {
+                testCodeList.push(`- ${testCode}: ${studentCount}名の学生, ${Math.floor(fileCount/testCodeList.length || 1)}ファイル`);
             }
         }
         
-        if (processedFiles === 0) {
-            showAdminError('ダウンロード可能なファイルがありませんでした。');
-            return;
+        // Firebase Console直接ダウンロードを案内
+        const message = `
+🔥 Firebase上に提出データが見つかりました！
+
+📊 **提出状況:**
+${testCodeList.join('\n')}
+
+💡 **推奨ダウンロード方法:**
+
+**1. Firebase Console から直接ダウンロード**
+   • https://console.firebase.google.com/project/physics-quiz-app/storage
+   • 左メニュー「Storage」→「ファイル」
+   • submissions フォルダを選択
+   • テストコード別フォルダ → 学籍番号別フォルダ
+   • 一括選択してダウンロード
+
+**2. フォルダ構造:**
+   submissions/
+   ├── テストコード1/
+   │   ├── 1234/
+   │   │   ├── question1.png
+   │   │   ├── question2.png
+   │   │   └── metadata.json (学生情報・回答詳細)
+   │   └── 5678/
+   └── テストコード2/
+
+**3. metadata.json には以下が含まれます:**
+   • 学籍番号、テストコード
+   • 提出日時、回答時間
+   • テキスト回答内容
+   • 違反回数、デバイス情報
+
+この方法により、テストコード別・学生別に整理された
+すべての画像とデータを効率的に取得できます。
+        `;
+        
+        showAdminSuccess(message);
+        
+        // Firebase Consoleへのリンクを開く
+        if (confirm('Firebase Consoleを開きますか？')) {
+            window.open('https://console.firebase.google.com/project/physics-quiz-app/storage', '_blank');
         }
         
-        // ZIPファイル生成・ダウンロード
-        showAdminSuccess('ZIPファイルを生成中...');
-        const zipBlob = await zip.generateAsync({
-            type: 'blob',
-            compression: 'DEFLATE',
-            compressionOptions: { level: 6 }
-        });
-        
-        const now = new Date();
-        const filename = `Firebase提出画像_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.zip`;
-        
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(zipBlob);
-        link.download = filename;
-        link.click();
-        
-        showAdminSuccess(`✅ Firebase画像ダウンロード完了！（${processedFiles}ファイル、${filename}）`);
-        
     } catch (error) {
-        console.error('Firebase download error:', error);
-        showAdminError('Firebase画像のダウンロードに失敗しました: ' + error.message);
+        console.error('Firebase check error:', error);
+        showAdminError('Firebase接続エラー: ' + error.message);
     }
 }
 
