@@ -1639,15 +1639,16 @@ async function submitTest() {
 // 学生の解答を保存
 function saveStudentAnswers() {
     const submissionData = {
-        studentId: studentId,
+        studentId: currentStudentId || studentId,
+        testCode: currentTestCode,
         timestamp: new Date().toISOString(),
-        startTime: startTime,
+        startTime: testStartTime || startTime,
         endTime: new Date(),
-        totalTime: Math.floor((new Date() - startTime) / 1000),
+        totalTime: Math.floor((new Date() - (testStartTime || startTime)) / 1000),
         violationCount: violationCount,
-        violations: testData.violations,
-        answers: testData.answers,
-        questions: questions.map(q => ({
+        violations: testData ? testData.violations : [],
+        answers: userAnswers || (testData ? testData.answers : []),
+        questions: (currentTestData ? currentTestData.questions : questions).map(q => ({
             id: q.id,
             image: q.image,
             patterns: q.patterns
@@ -1656,8 +1657,12 @@ function saveStudentAnswers() {
     
     // ローカルストレージに保存
     const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
-    submissions.push(submissionData);
-    localStorage.setItem('studentSubmissions', JSON.stringify(submissions));
+    
+    // 同じ学生IDの古い提出を削除
+    const filteredSubmissions = submissions.filter(sub => sub.studentId !== submissionData.studentId);
+    filteredSubmissions.push(submissionData);
+    
+    localStorage.setItem('studentSubmissions', JSON.stringify(filteredSubmissions));
     
     console.log('Student answers saved:', submissionData);
 }
@@ -1665,6 +1670,8 @@ function saveStudentAnswers() {
 // 提出完了画面を表示
 function showSubmissionComplete() {
     const resultContainer = document.querySelector('#resultScreen .result-container');
+    const answersCount = userAnswers ? userAnswers.length : (testData ? testData.answers.length : 0);
+    
     resultContainer.innerHTML = `
         <h2>✅ 提出完了</h2>
         <div style="text-align: center; margin: 30px 0;">
@@ -1672,13 +1679,13 @@ function showSubmissionComplete() {
                 📝 解答が正常に提出されました
             </div>
             <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
-                <p><strong>学籍番号:</strong> ${studentId}</p>
+                <p><strong>学籍番号:</strong> ${currentStudentId || studentId}</p>
                 <p><strong>提出時刻:</strong> ${new Date().toLocaleString('ja-JP')}</p>
-                <p><strong>回答数:</strong> ${testData.answers.length} 問</p>
+                <p><strong>回答数:</strong> ${answersCount} 問</p>
                 <p><strong>違反回数:</strong> ${violationCount} 回</p>
             </div>
             <div style="color: #6c757d; font-size: 14px; margin: 20px 0;">
-                解答は教員によって採点されます。<br>
+                解答は教員によって手動で採点されます。<br>
                 結果については後日お知らせいたします。
             </div>
         </div>
@@ -1807,18 +1814,28 @@ function showSubmissionResults() {
         const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
         const container = document.getElementById('submissionResultsContainer');
         
+        console.log('showSubmissionResults called');
+        console.log('Found submissions:', submissions.length);
+        console.log('Submissions data:', submissions);
+        
         if (!container) {
             console.error('Results container not found');
+            showAdminError('結果表示エリアが見つかりません。');
             return;
         }
         
         if (submissions.length === 0) {
             container.innerHTML = `
-                <div class="no-results">
+                <div class="no-results" style="padding: 40px; text-align: center; background: #f8f9fa; border-radius: 10px; margin: 20px 0;">
+                    <h3>📝 解答データなし</h3>
                     <p>まだ提出された解答がありません。</p>
+                    <p style="color: #666; font-size: 14px;">
+                        学生がテストを完了すると、ここに解答データが表示されます。
+                    </p>
                 </div>
             `;
             container.style.display = 'block';
+            showAdminSuccess('解答データを確認しました。現在の提出数: 0件');
             return;
         }
         
@@ -1904,6 +1921,8 @@ function showSubmissionResults() {
         
         container.innerHTML = html;
         container.style.display = 'block';
+        
+        showAdminSuccess(`${submissions.length}件の提出データを表示しました。`);
         
     } catch (error) {
         console.error('Failed to show submission results:', error);
