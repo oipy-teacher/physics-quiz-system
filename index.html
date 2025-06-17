@@ -12,16 +12,10 @@
         <div class="login-container">
             <h1>物理小テスト</h1>
             
-            <!-- 学籍番号ログイン（無効化） -->
+            <!-- 学籍番号ログイン -->
             <div id="studentLoginDiv">
-                <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-                    <h4 style="color: #856404; margin: 0 0 10px 0;">🔒 学籍番号のみでの受験は無効化されました</h4>
-                    <p style="color: #856404; margin: 0; font-size: 14px;">
-                        セキュリティ強化のため、QRコードまたはテストコードが必要です
-                    </p>
-                </div>
-                <input type="text" id="studentId" placeholder="学籍番号（4桁）- 現在無効" maxlength="4" pattern="[0-9]{4}" disabled style="opacity: 0.5;">
-                <button id="loginButton" onclick="studentLogin()" disabled style="opacity: 0.5; cursor: not-allowed;">テスト開始（無効）</button>
+                <input type="text" id="studentId" placeholder="学籍番号（4桁）" maxlength="4" pattern="[0-9]{4}">
+                <button id="loginButton" onclick="studentLogin()">テスト開始</button>
             </div>
             
             <!-- テストコードログイン -->
