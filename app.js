@@ -42,12 +42,18 @@ const ADMIN_PASSWORD = 'physics2024';
 
 // 初期化
 window.onload = function() {
+    console.log('Window loaded, checking URL parameters...');
+    console.log('Current URL:', window.location.href);
+    
     // URLからのデータ読み込みを最優先で実行
     const hasUrlData = loadQuestionsFromUrl();
     
     // URLにデータがない場合のみローカルストレージから読み込み
     if (!hasUrlData) {
+        console.log('No URL data found, loading from localStorage');
         loadSavedQuestions();
+    } else {
+        console.log('URL data found and loaded');
     }
     
     // 学籍番号入力フィールドのイベント設定
@@ -125,6 +131,8 @@ async function testCodeLogin() {
     const studentIdInput = document.getElementById('studentIdForCode').value.trim();
     const errorDiv = document.getElementById('loginError');
 
+    console.log('Test code login attempt:', testCode, 'Student ID:', studentIdInput);
+
     // バリデーション
     if (!/^[A-Z0-9]{6}$/.test(testCode)) {
         errorDiv.textContent = 'テストコードは6桁の英数字で入力してください';
@@ -147,9 +155,11 @@ async function testCodeLogin() {
         
         // まずローカルストレージから確認（同一端末の場合）
         const testKey = `testCode_${testCode}`;
+        console.log('Looking for test data with key:', testKey);
         const localData = localStorage.getItem(testKey);
         
         if (localData) {
+            console.log('Found local data:', localData.substring(0, 100) + '...');
             const parsedLocal = JSON.parse(localData);
             
             if (parsedLocal.questions) {
@@ -157,10 +167,15 @@ async function testCodeLogin() {
                 console.log('Data loaded from local storage:', data);
             } else if (parsedLocal.dataUrl) {
                 // データURLがある場合は、そのURLにリダイレクト
+                console.log('Redirecting to data URL:', parsedLocal.dataUrl);
                 errorDiv.textContent = 'テストページにリダイレクト中...';
                 window.location.href = parsedLocal.dataUrl;
                 return;
             }
+        } else {
+            console.log('No local data found for test key:', testKey);
+            // ローカルストレージの全キーをチェック
+            console.log('All localStorage keys:', Object.keys(localStorage));
         }
         
         // データが見つからない場合の対処
@@ -1357,6 +1372,11 @@ function loadQuestionsFromUrl() {
         const shareId = urlParams.get('id');
         const dataParam = urlParams.get('data'); // データ埋め込み形式
         
+        console.log('URL parameters found:');
+        console.log('- testCode:', testCode);
+        console.log('- shareId:', shareId);
+        console.log('- dataParam:', dataParam ? 'YES (length: ' + dataParam.length + ')' : 'NO');
+        
         let data = null;
         
         if (dataParam) {
@@ -1405,19 +1425,28 @@ function loadQuestionsFromUrl() {
             
             // QRコード読み込み後、学籍番号入力画面を表示
             setTimeout(() => {
-                if (document.getElementById('loginScreen') && currentScreen === 'login') {
+                const loginScreen = document.getElementById('loginScreen');
+                const isOnLoginScreen = loginScreen && (currentScreen === 'login' || loginScreen.style.display !== 'none');
+                
+                if (isOnLoginScreen) {
                     console.log('QR code data loaded, showing test code login screen');
+                    console.log('Data contains testCode:', data.testCode);
                     showTestCodeLogin();
                     
                     // テストコードを自動入力
                     if (data.testCode) {
-                        const testCodeInput = document.getElementById('testCodeInput');
-                        if (testCodeInput) {
-                            testCodeInput.value = data.testCode;
-                        }
+                        setTimeout(() => {
+                            const testCodeInput = document.getElementById('testCodeInput');
+                            if (testCodeInput) {
+                                testCodeInput.value = data.testCode;
+                                console.log('Test code auto-filled:', data.testCode);
+                            }
+                        }, 100);
                     }
+                } else {
+                    console.log('Not on login screen, current screen:', currentScreen);
                 }
-            }, 500);
+            }, 300);
             
             // 管理画面の場合は表示を更新
             if (document.getElementById('questionList')) {
