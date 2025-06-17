@@ -761,9 +761,12 @@ function removeQuestion(index) {
 
 // 問題設定保存
 async function saveQuestions() {
-    // 🚨 保存前にLocalStorage容量チェック
+    // 🧹 保存前に古いテストデータを自動クリア（一回限りのテスト用）
+    clearOldTestDataAutomatically();
+    
+    // 容量チェック（念のため）
     if (!checkStorageQuota()) {
-        showAdminError('❌ 容量不足により保存できません。\n\n「全データをクリア」ボタンで古いデータを削除してください。');
+        showAdminError('❌ 容量不足により保存できません。');
         return;
     }
     
@@ -3095,6 +3098,65 @@ function checkStorageQuota() {
     }
 }
 
+// 🧹 一回限りテスト用: 古いデータを自動クリア
+function clearOldTestDataAutomatically() {
+    console.log('🧹 自動クリーニング開始: 一回限りテスト用');
+    
+    let deletedCount = 0;
+    const keysToDelete = [];
+    
+    // 古いテストコードを全て削除（現在のもの以外）
+    Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('testCode_') && key !== `testCode_${getCurrentTestCode()}`) {
+            keysToDelete.push(key);
+        }
+        
+        // 学生の解答データも削除（Firebase に保存されているため）
+        if (key.startsWith('submissions_') || key.startsWith('answers_')) {
+            keysToDelete.push(key);
+        }
+        
+        // 古い学生データも削除
+        if (key.startsWith('studentSubmissions')) {
+            keysToDelete.push(key);
+        }
+    });
+    
+    // 削除実行
+    keysToDelete.forEach(key => {
+        localStorage.removeItem(key);
+        deletedCount++;
+        console.log(`🗑️ Auto-deleted: ${key}`);
+    });
+    
+    if (deletedCount > 0) {
+        const usedMB = (JSON.stringify(localStorage).length / (1024 * 1024)).toFixed(2);
+        console.log(`🧹 自動クリーニング完了: ${deletedCount}件削除, 現在${usedMB}MB使用中`);
+    }
+}
+
+// 現在のテストコードを取得
+function getCurrentTestCode() {
+    // 最新のテストコードを取得
+    const testCodes = Object.keys(localStorage)
+        .filter(key => key.startsWith('testCode_'))
+        .map(key => {
+            try {
+                const data = JSON.parse(localStorage.getItem(key));
+                return {
+                    code: key.replace('testCode_', ''),
+                    created: new Date(data.created || data.lastUpdated || 0)
+                };
+            } catch {
+                return null;
+            }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.created - a.created);
+    
+    return testCodes.length > 0 ? testCodes[0].code : null;
+}
+
 function emergencyCleanStorage() {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     let deletedCount = 0;
@@ -3171,7 +3233,10 @@ function emergencyCleanStorage() {
 
 // ページ読み込み完了時の初期化
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('Physics Quiz System initialized - Version 2.1');
+    console.log('Physics Quiz System initialized - Version 2.2 (Auto-cleanup)');
+    
+    // 🧹 起動時に自動クリーニング実行（一回限りテスト用）
+    clearOldTestDataAutomatically();
     
     // 管理画面の初期化
     setupDragAndDrop();
