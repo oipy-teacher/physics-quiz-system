@@ -943,34 +943,65 @@ function generateQRCode(testCode) {
     const qrContainer = document.getElementById('qrcode');
     if (!qrContainer) return;
     
-    // ローカルストレージからデータURLを取得
+    console.log('=== generateQRCode called ===');
+    console.log('testCode:', testCode);
+    
+    // ローカルストレージからテストデータを取得
     const testKey = `testCode_${testCode}`;
     const testData = localStorage.getItem(testKey);
     
+    console.log('testKey:', testKey);
+    console.log('testData found:', !!testData);
+    
     let qrUrl;
+    let targetUrl;
+    
     if (testData) {
         try {
             const parsedData = JSON.parse(testData);
+            console.log('Parsed test data:', parsedData);
+            
             if (parsedData.dataUrl) {
-                // データ埋め込みURLを使用
-                qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(parsedData.dataUrl)}`;
+                // データ埋め込みURLを使用（最優先）
+                targetUrl = parsedData.dataUrl;
+                console.log('Using embedded data URL');
+            } else if (parsedData.encodedData) {
+                // エンコードされたデータからURLを再構築
+                targetUrl = `${window.location.origin}${window.location.pathname}?data=${parsedData.encodedData}`;
+                console.log('Using encoded data URL');
             } else {
-                // フォールバック：テストコード方式
-                const fallbackUrl = `${window.location.origin + window.location.pathname}?code=${testCode}`;
-                qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fallbackUrl)}`;
+                // テストコード方式（フォールバック）
+                targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+                console.log('Using test code URL (fallback)');
             }
         } catch (e) {
+            console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
-            const fallbackUrl = `${window.location.origin + window.location.pathname}?code=${testCode}`;
-            qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fallbackUrl)}`;
+            targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
         }
     } else {
         // データが見つからない場合はテストコード方式
-        const fallbackUrl = `${window.location.origin + window.location.pathname}?code=${testCode}`;
-        qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fallbackUrl)}`;
+        targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+        console.log('No test data found, using test code URL');
     }
     
-    qrContainer.innerHTML = `<img src="${qrUrl}" alt="QRコード" style="border: 1px solid #ddd; border-radius: 8px;">`;
+    console.log('Final target URL:', targetUrl);
+    console.log('URL length:', targetUrl.length);
+    
+    // QRコード画像URLを生成
+    qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(targetUrl)}`;
+    
+    qrContainer.innerHTML = `
+        <div style="text-align: center;">
+            <img src="${qrUrl}" alt="QRコード" style="border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;">
+            <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                テストコード: <strong>${testCode}</strong>
+            </div>
+            <div style="font-size: 10px; color: #999; margin-top: 5px; word-break: break-all;">
+                URL: ${targetUrl.length > 50 ? targetUrl.substring(0, 50) + '...' : targetUrl}
+            </div>
+        </div>
+    `;
 }
 
 // QRコードダウンロード
@@ -1625,8 +1656,8 @@ async function submitTest() {
         // タイマー停止
         clearInterval(timerInterval);
         
-        // 解答を保存
-        saveStudentAnswers();
+        // 解答を保存（統一された保存関数を使用）
+        saveSubmissionResult();
         
         // 完了画面表示
         showScreen('result');
@@ -1636,41 +1667,23 @@ async function submitTest() {
 
 // ========== 解答回収機能 ==========
 
-// 学生の解答を保存
-function saveStudentAnswers() {
-    const submissionData = {
-        studentId: currentStudentId || studentId,
-        testCode: currentTestCode,
-        timestamp: new Date().toISOString(),
-        startTime: testStartTime || startTime,
-        endTime: new Date(),
-        totalTime: Math.floor((new Date() - (testStartTime || startTime)) / 1000),
-        violationCount: violationCount,
-        violations: testData ? testData.violations : [],
-        answers: userAnswers || (testData ? testData.answers : []),
-        questions: (currentTestData ? currentTestData.questions : questions).map(q => ({
-            id: q.id,
-            image: q.image,
-            patterns: q.patterns
-        }))
-    };
-    
-    // ローカルストレージに保存
-    const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
-    
-    // 同じ学生IDの古い提出を削除
-    const filteredSubmissions = submissions.filter(sub => sub.studentId !== submissionData.studentId);
-    filteredSubmissions.push(submissionData);
-    
-    localStorage.setItem('studentSubmissions', JSON.stringify(filteredSubmissions));
-    
-    console.log('Student answers saved:', submissionData);
-}
+// 重複関数削除 - saveSubmissionResultに統一
 
 // 提出完了画面を表示
 function showSubmissionComplete() {
     const resultContainer = document.querySelector('#resultScreen .result-container');
-    const answersCount = userAnswers ? userAnswers.length : (testData ? testData.answers.length : 0);
+    const finalStudentId = currentStudentId || studentId;
+    const finalAnswers = userAnswers || (testData ? testData.answers : []);
+    const answersCount = finalAnswers.length;
+    
+    console.log('=== showSubmissionComplete called ===');
+    console.log('finalStudentId:', finalStudentId);
+    console.log('answersCount:', answersCount);
+    console.log('violationCount:', violationCount);
+    
+    // 保存された提出データを確認
+    const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+    const mySubmission = savedSubmissions.find(s => s.studentId === finalStudentId);
     
     resultContainer.innerHTML = `
         <h2>✅ 提出完了</h2>
@@ -1679,15 +1692,24 @@ function showSubmissionComplete() {
                 📝 解答が正常に提出されました
             </div>
             <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
-                <p><strong>学籍番号:</strong> ${currentStudentId || studentId}</p>
+                <p><strong>学籍番号:</strong> ${finalStudentId}</p>
                 <p><strong>提出時刻:</strong> ${new Date().toLocaleString('ja-JP')}</p>
                 <p><strong>回答数:</strong> ${answersCount} 問</p>
-                <p><strong>違反回数:</strong> ${violationCount} 回</p>
+                <p><strong>違反回数:</strong> ${violationCount || 0} 回</p>
+                ${mySubmission ? '<p style="color: #28a745;"><strong>✓ データ保存確認済み</strong></p>' : '<p style="color: #dc3545;"><strong>⚠ データ保存を確認できません</strong></p>'}
             </div>
             <div style="color: #6c757d; font-size: 14px; margin: 20px 0;">
                 解答は教員によって手動で採点されます。<br>
                 結果については後日お知らせいたします。
             </div>
+            ${mySubmission ? '' : `
+                <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #ffeaa7;">
+                    <p style="color: #856404; margin: 0; font-size: 14px;">
+                        ⚠ 提出データの保存に問題がある可能性があります。<br>
+                        念のため、教員に提出完了を口頭で報告してください。
+                    </p>
+                </div>
+            `}
         </div>
         <button class="nav-button" onclick="backToLogin()">終了</button>
     `;
@@ -1773,38 +1795,68 @@ function closeWarning() {
 
 // ========== 結果保存・表示 ==========
 
-// 学生の解答を保存
+// 学生の解答を保存（統一版）
 function saveSubmissionResult() {
     try {
-        if (!currentTestData || !userAnswers) {
-            console.error('No test data or answers available');
+        console.log('=== saveSubmissionResult called ===');
+        console.log('currentStudentId:', currentStudentId);
+        console.log('studentId:', typeof studentId !== 'undefined' ? studentId : 'undefined');
+        console.log('currentTestCode:', currentTestCode);
+        console.log('userAnswers:', userAnswers);
+        console.log('currentTestData:', currentTestData);
+        
+        const finalStudentId = currentStudentId || studentId;
+        const finalTestCode = currentTestCode || 'LOCAL';
+        const finalAnswers = userAnswers || (testData ? testData.answers : []);
+        const finalQuestions = currentTestData ? currentTestData.questions : questions;
+        const finalStartTime = testStartTime || startTime || new Date();
+        
+        if (!finalStudentId) {
+            console.error('No student ID available');
+            alert('学籍番号が取得できませんでした。再度ログインしてください。');
             return;
         }
         
         const submissionData = {
-            studentId: currentStudentId,
-            testCode: currentTestCode,
+            studentId: finalStudentId,
+            testCode: finalTestCode,
             timestamp: new Date().toISOString(),
-            answers: userAnswers,
-            questions: currentTestData.questions,
-            violationCount: violationCount,
-            totalTime: Math.floor((new Date() - testStartTime) / 1000),
+            startTime: finalStartTime,
+            endTime: new Date(),
+            totalTime: Math.floor((new Date() - finalStartTime) / 1000),
+            answers: finalAnswers,
+            questions: finalQuestions.map(q => ({
+                id: q.id,
+                image: q.image,
+                patterns: q.patterns
+            })),
+            violationCount: violationCount || 0,
+            violations: testData ? testData.violations : [],
             isCompleted: true
         };
         
+        console.log('Prepared submission data:', submissionData);
+        
         // ローカルストレージに保存
         const existingSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        console.log('Existing submissions before save:', existingSubmissions);
         
         // 同じ学生IDの古い提出を削除
-        const filteredSubmissions = existingSubmissions.filter(sub => sub.studentId !== currentStudentId);
+        const filteredSubmissions = existingSubmissions.filter(sub => sub.studentId !== finalStudentId);
         filteredSubmissions.push(submissionData);
         
         localStorage.setItem('studentSubmissions', JSON.stringify(filteredSubmissions));
+        console.log('Submission saved to localStorage');
         
-        console.log('Submission saved successfully:', submissionData);
+        // 保存確認
+        const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        console.log('Verification - submissions after save:', savedSubmissions);
+        
+        alert(`提出完了！学籍番号: ${finalStudentId} の解答を保存しました。`);
         
     } catch (error) {
         console.error('Failed to save submission:', error);
+        alert('解答の保存に失敗しました: ' + error.message);
     }
 }
 
