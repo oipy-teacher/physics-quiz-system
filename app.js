@@ -338,9 +338,33 @@ async function studentLogin() {
         // 同一端末でのテスト実行（管理者が設定済み）
         console.log('Local test execution - same device as admin setup');
 
+        // アクティブなテストコードを取得（最新のもの）
+        const allKeys = Object.keys(localStorage);
+        const testCodeKeys = allKeys.filter(key => key.startsWith('testCode_'));
+        let activeTestCode = 'LOCAL';
+        
+        if (testCodeKeys.length > 0) {
+            // 最新のテストコードを取得
+            const testCodes = testCodeKeys.map(key => {
+                try {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    return { code: key.replace('testCode_', ''), lastUpdated: data.lastUpdated };
+                } catch (e) {
+                    return null;
+                }
+            }).filter(item => item);
+            
+            if (testCodes.length > 0) {
+                // 最新のテストコードを使用
+                testCodes.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
+                activeTestCode = testCodes[0].code;
+                console.log('Using active test code:', activeTestCode);
+            }
+        }
+
         // 新しい変数に設定
         currentStudentId = inputId;
-        currentTestCode = 'LOCAL'; // ローカルテスト用
+        currentTestCode = activeTestCode;
         currentTestData = { questions: questions, answerExamples: answerExamples };
         studentId = inputId; // 後方互換性のため
         
@@ -2138,27 +2162,7 @@ async function saveSubmissionResult() {
         console.log('currentTestData:', currentTestData);
         
         const finalStudentId = currentStudentId || studentId;
-        
-        // 実際のテストコードを取得
-        let finalTestCode = currentTestCode;
-        if (!finalTestCode) {
-            // URLパラメータからテストコードを取得
-            const urlParams = new URLSearchParams(window.location.search);
-            finalTestCode = urlParams.get('code');
-        }
-        if (!finalTestCode) {
-            // ローカルストレージから最新のテストコードを取得
-            const allKeys = Object.keys(localStorage).filter(key => key.startsWith('testCode_'));
-            if (allKeys.length > 0) {
-                const latestKey = allKeys.sort().pop();
-                finalTestCode = latestKey.replace('testCode_', '');
-            }
-        }
-        // どうしても取得できない場合のみLOCALを使用
-        finalTestCode = finalTestCode || 'LOCAL';
-        
-        console.log('Determined finalTestCode:', finalTestCode);
-        
+        const finalTestCode = currentTestCode || 'LOCAL';
         const finalAnswers = userAnswers || (testData ? testData.answers : []);
         const finalQuestions = currentTestData ? currentTestData.questions : questions;
         const finalStartTime = testStartTime || startTime || new Date();
@@ -2238,7 +2242,7 @@ async function saveSubmissionResult() {
             try {
                 await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
                 firebaseMessage = '\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能';
-            } catch (error) {
+    } catch (error) {
                 console.error('Firebase upload failed:', error);
                 firebaseMessage = '\n\n⚠️ Firebase Storageへのアップロードに失敗\nローカル保存は完了しています';
             }
