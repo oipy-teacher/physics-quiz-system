@@ -2218,16 +2218,16 @@ async function saveSubmissionResult() {
         if (isFirebaseAvailable) {
             try {
                 await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
-                firebaseMessage = '\n✅ Firebase Storageに画像もアップロードしました！';
+                firebaseMessage = '\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能';
             } catch (error) {
                 console.error('Firebase upload failed:', error);
-                firebaseMessage = '\n⚠️ Firebase Storageへのアップロードに失敗しましたが、ローカル保存は完了しています。';
+                firebaseMessage = '\n\n⚠️ Firebase Storageへのアップロードに失敗\nローカル保存は完了しています';
             }
         } else {
-            firebaseMessage = '\n📝 ローカルに保存しました（Firebase未設定）';
+            firebaseMessage = '\n\n📝 ローカルに保存しました\n⚙️ Firebase設定で教員への画像共有が可能\n詳細: FIREBASE_QUICK_SETUP.md参照';
         }
         
-        alert(`提出完了！学籍番号: ${finalStudentId} の解答を保存しました。${firebaseMessage}`);
+        alert(`🎉 提出完了！\n学籍番号: ${finalStudentId}${firebaseMessage}`);
         
     } catch (error) {
         console.error('Failed to save submission:', error);
