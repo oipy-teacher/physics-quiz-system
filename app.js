@@ -42,6 +42,17 @@ const ADMIN_PASSWORD = 'physics2024';
 
 // 初期化
 window.onload = function() {
+    // URLパラメータを確認して、学生アクセス可能かどうかを判定
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasData = urlParams.has('data');
+    const hasCode = urlParams.has('code');
+    
+    // パラメータがない場合（メインURL直接アクセス）は教員専用モードにする
+    if (!hasData && !hasCode) {
+        console.log('Direct access to main URL - Admin mode only');
+        enableAdminOnlyMode();
+    }
+    
     // ローカルストレージから問題データを読み込む
     loadSavedQuestions();
     
@@ -74,6 +85,55 @@ window.onload = function() {
     // ドラッグ＆ドロップ設定
     setupDragAndDrop();
 };
+
+// 教員専用モードを有効化
+function enableAdminOnlyMode() {
+    // 学生ログイン要素を非表示にする
+    const studentLoginDiv = document.getElementById('studentLoginDiv');
+    const testCodeButton = document.querySelector('.test-code-button');
+    
+    if (studentLoginDiv) {
+        studentLoginDiv.style.display = 'none';
+    }
+    if (testCodeButton) {
+        testCodeButton.style.display = 'none';
+    }
+    
+    // タイトルを教員専用に変更
+    const title = document.querySelector('#loginScreen h1');
+    if (title) {
+        title.innerHTML = '物理小テスト<br><small style="font-size: 14px; color: #666;">教員専用管理システム</small>';
+    }
+    
+    // 教員ログインボタンを目立たせる
+    const adminButton = document.querySelector('.admin-login-button');
+    if (adminButton) {
+        adminButton.style.background = '#007aff';
+        adminButton.style.fontSize = '18px';
+        adminButton.style.padding = '15px 30px';
+        adminButton.textContent = '📝 管理画面にログイン';
+    }
+    
+    // メッセージを追加
+    const loginContainer = document.querySelector('.login-container');
+    if (loginContainer) {
+        const messageDiv = document.createElement('div');
+        messageDiv.style.cssText = `
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #2196f3;
+            font-size: 14px;
+            color: #1976d2;
+        `;
+        messageDiv.innerHTML = `
+            <strong>📚 教員専用システム</strong><br>
+            学生の皆様は、授業で配布されたQRコードをスキャンしてアクセスしてください。
+        `;
+        loginContainer.insertBefore(messageDiv, adminButton);
+    }
+}
 
 // ログイン切り替え
 function showAdminLogin() {
@@ -186,6 +246,23 @@ async function testCodeLogin() {
 async function studentLogin() {
     const inputId = document.getElementById('studentId').value;
     const errorDiv = document.getElementById('loginError');
+    
+    // URLパラメータチェック（セキュリティ強化）
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasData = urlParams.has('data');
+    const hasCode = urlParams.has('code');
+    
+    if (!hasData && !hasCode) {
+        errorDiv.innerHTML = `
+            <div style="text-align: left; color: #d32f2f;">
+                <strong>⚠️ アクセス制限</strong><br><br>
+                このURLは教員専用です。<br>
+                学生の皆様は、授業で配布されたQRコードをスキャンしてアクセスしてください。
+            </div>
+        `;
+        errorDiv.style.display = 'block';
+        return;
+    }
 
     // バリデーション
     if (!/^\d{4}$/.test(inputId)) {
