@@ -40,6 +40,37 @@ let gradingResults = [];
 // 管理者パスワード（実際の運用では環境変数やサーバー側で管理）
 const ADMIN_PASSWORD = 'physics2024';
 
+// Firebase設定
+const firebaseConfig = {
+    apiKey: "AIzaSyBxYYlG1RP0ZxFyZOuPQ3-demo-key-xyz",
+    authDomain: "physics-quiz-demo.firebaseapp.com", 
+    projectId: "physics-quiz-demo",
+    storageBucket: "physics-quiz-demo.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "1:123456789:web:demo-app-id"
+};
+
+// Firebase初期化
+let firebaseApp = null;
+let firebaseStorage = null;
+let isFirebaseAvailable = false;
+
+function initFirebase() {
+    try {
+        if (typeof firebase !== 'undefined') {
+            firebaseApp = firebase.initializeApp(firebaseConfig);
+            firebaseStorage = firebase.storage();
+            isFirebaseAvailable = true;
+            console.log('Firebase initialized successfully');
+        } else {
+            console.warn('Firebase SDK not loaded');
+        }
+    } catch (error) {
+        console.warn('Firebase initialization failed:', error);
+        isFirebaseAvailable = false;
+    }
+}
+
 // 初期化
 window.onload = function() {
     // URLパラメータを確認して、学生アクセス可能かどうかを判定
@@ -84,6 +115,9 @@ window.onload = function() {
     
     // ドラッグ＆ドロップ設定
     setupDragAndDrop();
+    
+    // Firebase初期化
+    initFirebase();
 };
 
 // 教員専用モードを有効化
@@ -339,6 +373,7 @@ function showScreen(screen) {
             break;
         case 'admin':
             document.getElementById('adminScreen').style.display = 'block';
+            updateFirebaseStatus();
             break;
         case 'test':
             document.getElementById('testScreen').style.display = 'flex';
@@ -354,6 +389,18 @@ function showScreen(screen) {
             break;
     }
     currentScreen = screen;
+}
+
+// Firebase設定状況を表示
+function updateFirebaseStatus() {
+    const statusElement = document.getElementById('firebaseStatus');
+    if (statusElement) {
+        if (!isFirebaseAvailable) {
+            statusElement.style.display = 'block';
+        } else {
+            statusElement.style.display = 'none';
+        }
+    }
 }
 
 // ========== 教員用機能 ==========
@@ -2073,7 +2120,7 @@ function closeWarning() {
 // ========== 結果保存・表示 ==========
 
 // 学生の解答を保存（統一版）
-function saveSubmissionResult() {
+async function saveSubmissionResult() {
     try {
         console.log('=== saveSubmissionResult called ===');
         console.log('currentStudentId:', currentStudentId);
@@ -2157,11 +2204,64 @@ function saveSubmissionResult() {
         const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
         console.log('Verification - submissions after save:', savedSubmissions);
         
+        // Firebase Storageに画像をアップロード
+        if (isFirebaseAvailable) {
+            await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
+        }
+        
         alert(`提出完了！学籍番号: ${finalStudentId} の解答を保存しました。`);
         
     } catch (error) {
         console.error('Failed to save submission:', error);
         alert('解答の保存に失敗しました: ' + error.message);
+    }
+}
+
+// Firebase Storageに画像をアップロード
+async function uploadImagesToFirebase(studentId, testCode, answers) {
+    if (!isFirebaseAvailable || !firebaseStorage) {
+        console.log('Firebase not available, skipping image upload');
+        return;
+    }
+    
+    try {
+        console.log('Starting Firebase image upload for student:', studentId);
+        
+        for (let i = 0; i < answers.length; i++) {
+            const answer = answers[i];
+            if (answer && answer.method === 'canvas' && answer.canvas) {
+                // Canvas画像をBlobに変換
+                const response = await fetch(answer.canvas);
+                const blob = await response.blob();
+                
+                // Firebaseのパス: submissions/テストコード/学籍番号/問題番号.png
+                const imagePath = `submissions/${testCode}/${studentId}/question${i + 1}.png`;
+                const storageRef = firebaseStorage.ref(imagePath);
+                
+                console.log(`Uploading image: ${imagePath}`);
+                await storageRef.put(blob);
+                console.log(`Successfully uploaded: ${imagePath}`);
+            }
+        }
+        
+        // メタデータも保存
+        const metadata = {
+            studentId: studentId,
+            testCode: testCode,
+            timestamp: new Date().toISOString(),
+            questionCount: answers.length,
+            uploadedAt: new Date().toLocaleString('ja-JP')
+        };
+        
+        const metadataPath = `submissions/${testCode}/${studentId}/metadata.json`;
+        const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
+        await firebaseStorage.ref(metadataPath).put(metadataBlob);
+        
+        console.log('Firebase image upload completed successfully');
+        
+    } catch (error) {
+        console.error('Firebase upload error:', error);
+        // アップロードエラーでも解答提出は継続（ローカル保存は成功しているため）
     }
 }
 
@@ -2566,6 +2666,99 @@ async function loadJSZip() {
         script.onerror = reject;
         document.head.appendChild(script);
     });
+}
+
+// Firebase画像一括ダウンロード（教員専用）
+async function downloadFirebaseImages() {
+    if (!isFirebaseAvailable || !firebaseStorage) {
+        showAdminError('Firebase Storageが利用できません。Firebase設定を確認してください。');
+        return;
+    }
+    
+    try {
+        showAdminSuccess('Firebase画像をダウンロード中...');
+        
+        // JSZipライブラリを読み込み
+        await loadJSZip();
+        
+        const zip = new JSZip();
+        const submissionsRef = firebaseStorage.ref('submissions');
+        
+        // すべてのテストコードフォルダを取得
+        const testCodes = await submissionsRef.listAll();
+        
+        if (testCodes.prefixes.length === 0) {
+            showAdminError('Firebase上に提出画像が見つかりません。');
+            return;
+        }
+        
+        let totalFiles = 0;
+        let processedFiles = 0;
+        
+        // 各テストコードごとに処理
+        for (const testCodeRef of testCodes.prefixes) {
+            const testCode = testCodeRef.name;
+            const testCodeFolder = zip.folder(testCode);
+            
+            // 各学生フォルダを取得
+            const students = await testCodeRef.listAll();
+            
+            for (const studentRef of students.prefixes) {
+                const studentId = studentRef.name;
+                const studentFolder = testCodeFolder.folder(`学籍番号_${studentId}`);
+                
+                // 学生の全ファイルを取得
+                const files = await studentRef.listAll();
+                totalFiles += files.items.length;
+                
+                for (const fileRef of files.items) {
+                    try {
+                        const url = await fileRef.getDownloadURL();
+                        const response = await fetch(url);
+                        const blob = await response.blob();
+                        
+                        studentFolder.file(fileRef.name, blob);
+                        processedFiles++;
+                        
+                        // 進捗表示
+                        if (processedFiles % 5 === 0) {
+                            showAdminSuccess(`ダウンロード中... ${processedFiles}/${totalFiles} ファイル`);
+                        }
+                        
+                    } catch (error) {
+                        console.error(`Failed to download ${fileRef.fullPath}:`, error);
+                    }
+                }
+            }
+        }
+        
+        if (processedFiles === 0) {
+            showAdminError('ダウンロード可能なファイルがありませんでした。');
+            return;
+        }
+        
+        // ZIPファイル生成・ダウンロード
+        showAdminSuccess('ZIPファイルを生成中...');
+        const zipBlob = await zip.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 6 }
+        });
+        
+        const now = new Date();
+        const filename = `Firebase提出画像_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.zip`;
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(zipBlob);
+        link.download = filename;
+        link.click();
+        
+        showAdminSuccess(`✅ Firebase画像ダウンロード完了！（${processedFiles}ファイル、${filename}）`);
+        
+    } catch (error) {
+        console.error('Firebase download error:', error);
+        showAdminError('Firebase画像のダウンロードに失敗しました: ' + error.message);
+    }
 }
 
 // 全解答データをクリア
