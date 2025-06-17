@@ -340,7 +340,11 @@ async function studentLogin() {
 
         // アクティブなテストコードを取得（最新のもの）
         const allKeys = Object.keys(localStorage);
+        console.log('All localStorage keys:', allKeys);
+        
         const testCodeKeys = allKeys.filter(key => key.startsWith('testCode_'));
+        console.log('Found testCode keys:', testCodeKeys);
+        
         let activeTestCode = 'LOCAL';
         
         if (testCodeKeys.length > 0) {
@@ -348,18 +352,27 @@ async function studentLogin() {
             const testCodes = testCodeKeys.map(key => {
                 try {
                     const data = JSON.parse(localStorage.getItem(key));
+                    console.log(`Data for ${key}:`, data);
                     return { code: key.replace('testCode_', ''), lastUpdated: data.lastUpdated };
                 } catch (e) {
+                    console.error(`Error parsing ${key}:`, e);
                     return null;
                 }
             }).filter(item => item);
+            
+            console.log('Valid test codes:', testCodes);
             
             if (testCodes.length > 0) {
                 // 最新のテストコードを使用
                 testCodes.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
                 activeTestCode = testCodes[0].code;
-                console.log('Using active test code:', activeTestCode);
+                console.log('Selected active test code:', activeTestCode);
+                console.log('Full test code data:', testCodes[0]);
+            } else {
+                console.log('No valid test codes found, using LOCAL');
             }
+        } else {
+            console.log('No testCode_ keys found in localStorage');
         }
 
         // 新しい変数に設定
@@ -2266,7 +2279,10 @@ async function uploadImagesToFirebase(studentId, testCode, answers) {
     }
     
     try {
+        console.log('=== Firebase Upload Debug ===');
         console.log('Starting Firebase image upload for student:', studentId);
+        console.log('Test code for upload:', testCode);
+        console.log('Answers count:', answers.length);
         
         for (let i = 0; i < answers.length; i++) {
             const answer = answers[i];
