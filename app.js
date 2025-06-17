@@ -2202,7 +2202,7 @@ function clearAllResults() {
 
 // ページ読み込み完了時の初期化
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('Physics Quiz System initialized');
+    console.log('Physics Quiz System initialized - Version 2.1');
     
     // 管理画面の初期化
     setupDragAndDrop();
