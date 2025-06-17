@@ -335,48 +335,55 @@ async function studentLogin() {
             return;
         }
 
-        // 同一端末でのテスト実行（管理者が設定済み）
-        console.log('Local test execution - same device as admin setup');
-
-        // アクティブなテストコードを取得（最新のもの）
-        const allKeys = Object.keys(localStorage);
-        console.log('All localStorage keys:', allKeys);
-        
-        const testCodeKeys = allKeys.filter(key => key.startsWith('testCode_'));
-        console.log('Found testCode keys:', testCodeKeys);
-        
+        // URLパラメータからテストコードを取得
         let activeTestCode = null;
         
-        if (testCodeKeys.length > 0) {
-            // 最新のテストコードを取得
-            const testCodes = testCodeKeys.map(key => {
-                try {
-                    const data = JSON.parse(localStorage.getItem(key));
-                    console.log(`Data for ${key}:`, data);
-                    return { 
-                        code: key.replace('testCode_', ''), 
-                        lastUpdated: data.lastUpdated || data.created,
-                        created: data.created
-                    };
-                } catch (e) {
-                    console.error(`Error parsing ${key}:`, e);
-                    return null;
-                }
-            }).filter(item => item);
-            
-            console.log('Valid test codes:', testCodes);
-            
-            if (testCodes.length > 0) {
-                // 最新のテストコードを使用
-                testCodes.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
-                activeTestCode = testCodes[0].code;
-                console.log('Selected active test code:', activeTestCode);
-                console.log('Full test code data:', testCodes[0]);
-            } else {
-                console.log('No valid test codes found');
-            }
+        // URLパラメータからcodeを取得（QRコードアクセスの場合）
+        if (hasCode) {
+            activeTestCode = urlParams.get('code');
+            console.log('Using test code from URL parameter:', activeTestCode);
         } else {
-            console.log('No testCode_ keys found in localStorage');
+            // 同一端末でのテスト実行（管理者が設定済み）
+            console.log('Local test execution - same device as admin setup');
+
+            // アクティブなテストコードを取得（最新のもの）
+            const allKeys = Object.keys(localStorage);
+            console.log('All localStorage keys:', allKeys);
+            
+            const testCodeKeys = allKeys.filter(key => key.startsWith('testCode_'));
+            console.log('Found testCode keys:', testCodeKeys);
+            
+            if (testCodeKeys.length > 0) {
+                // 最新のテストコードを取得
+                const testCodes = testCodeKeys.map(key => {
+                    try {
+                        const data = JSON.parse(localStorage.getItem(key));
+                        console.log(`Data for ${key}:`, data);
+                        return { 
+                            code: key.replace('testCode_', ''), 
+                            lastUpdated: data.lastUpdated || data.created,
+                            created: data.created
+                        };
+                    } catch (e) {
+                        console.error(`Error parsing ${key}:`, e);
+                        return null;
+                    }
+                }).filter(item => item);
+                
+                console.log('Valid test codes:', testCodes);
+                
+                if (testCodes.length > 0) {
+                    // 最新のテストコードを使用
+                    testCodes.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
+                    activeTestCode = testCodes[0].code;
+                    console.log('Selected active test code:', activeTestCode);
+                    console.log('Full test code data:', testCodes[0]);
+                } else {
+                    console.log('No valid test codes found');
+                }
+            } else {
+                console.log('No testCode_ keys found in localStorage');
+            }
         }
         
         // テストコードが見つからない場合は新しく生成
