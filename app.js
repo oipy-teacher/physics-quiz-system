@@ -2211,8 +2211,16 @@ async function saveSubmissionResult() {
         console.log('currentStudentId:', currentStudentId);
         console.log('studentId:', typeof studentId !== 'undefined' ? studentId : 'undefined');
         console.log('currentTestCode:', currentTestCode);
+        console.log('currentTestCode type:', typeof currentTestCode);
         console.log('userAnswers:', userAnswers);
         console.log('currentTestData:', currentTestData);
+        
+        // 🚨 デバッグ: currentTestCodeの値を詳細確認
+        if (!currentTestCode || currentTestCode === 'LOCAL') {
+            console.error('🚨 PROBLEM: currentTestCode is invalid!');
+            console.error('currentTestCode value:', currentTestCode);
+            console.error('All localStorage keys:', Object.keys(localStorage));
+        }
         
         const finalStudentId = currentStudentId || studentId;
         const finalTestCode = currentTestCode || generateShortId();
@@ -2321,7 +2329,17 @@ async function uploadImagesToFirebase(studentId, testCode, answers) {
         console.log('=== Firebase Upload Debug ===');
         console.log('Starting Firebase image upload for student:', studentId);
         console.log('Test code for upload:', testCode);
+        console.log('Test code type:', typeof testCode);
+        console.log('Test code length:', testCode ? testCode.length : 'null/undefined');
         console.log('Answers count:', answers.length);
+        
+        // 🚨 デバッグ: testCodeがLOCALになっていないか確認
+        if (testCode === 'LOCAL') {
+            console.error('🚨 ERROR: testCode is still LOCAL!');
+            console.error('studentId:', studentId);
+            console.error('currentTestCode:', currentTestCode);
+            console.error('currentStudentId:', currentStudentId);
+        }
         
         for (let i = 0; i < answers.length; i++) {
             const answer = answers[i];
