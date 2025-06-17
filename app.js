@@ -1889,15 +1889,22 @@ function saveSubmissionResult() {
         
         console.log('Prepared submission data:', submissionData);
         
-        // ローカルストレージに保存
-        const existingSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
-        console.log('Existing submissions before save:', existingSubmissions);
+        // テストコード毎に分離して保存
+        const submissionKey = `submissions_${finalTestCode}`;
+        const existingSubmissions = JSON.parse(localStorage.getItem(submissionKey) || '[]');
+        console.log('Existing submissions before save for test code', finalTestCode, ':', existingSubmissions);
         
         // 同じ学生IDの古い提出を削除
         const filteredSubmissions = existingSubmissions.filter(sub => sub.studentId !== finalStudentId);
         filteredSubmissions.push(submissionData);
         
-        localStorage.setItem('studentSubmissions', JSON.stringify(filteredSubmissions));
+        localStorage.setItem(submissionKey, JSON.stringify(filteredSubmissions));
+        
+        // 後方互換性のため、総合的な保存も維持
+        const allSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        const allFiltered = allSubmissions.filter(sub => sub.studentId !== finalStudentId || sub.testCode !== finalTestCode);
+        allFiltered.push(submissionData);
+        localStorage.setItem('studentSubmissions', JSON.stringify(allFiltered));
         console.log('Submission saved to localStorage');
         
         // 異なる端末からのアクセスの場合、クラウドストレージシミュレーション
@@ -1936,11 +1943,44 @@ function saveSubmissionResult() {
 // 提出結果一覧表示
 function showSubmissionResults() {
     try {
-        // 通常の提出データを読み込み
-        const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        // テストコード毎の提出データを収集
+        const allSubmissions = [];
+        const testCodeGroups = {};
         
-        // 異なる端末からの提出データも検索
+        // 1. 各テストコード毎のsubmissions_XXXキーから読み込み
         const allKeys = Object.keys(localStorage);
+        const submissionKeys = allKeys.filter(key => key.startsWith('submissions_'));
+        
+        submissionKeys.forEach(key => {
+            const testCode = key.replace('submissions_', '');
+            try {
+                const submissions = JSON.parse(localStorage.getItem(key) || '[]');
+                testCodeGroups[testCode] = submissions;
+                allSubmissions.push(...submissions);
+            } catch (e) {
+                console.error('Error parsing submissions for', testCode, ':', e);
+            }
+        });
+        
+        // 2. 古い形式の全体提出データも読み込み（後方互換性）
+        const legacySubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        legacySubmissions.forEach(sub => {
+            const testCode = sub.testCode || 'UNKNOWN';
+            if (!testCodeGroups[testCode]) {
+                testCodeGroups[testCode] = [];
+            }
+            // 重複チェック
+            const isDuplicate = testCodeGroups[testCode].some(existing => 
+                existing.studentId === sub.studentId && 
+                existing.timestamp === sub.timestamp
+            );
+            if (!isDuplicate) {
+                testCodeGroups[testCode].push(sub);
+                allSubmissions.push(sub);
+            }
+        });
+        
+        // 3. 異なる端末からの提出データも検索
         const cloudSubmissions = allKeys
             .filter(key => key.startsWith('submission_'))
             .map(key => {
@@ -1952,20 +1992,22 @@ function showSubmissionResults() {
             })
             .filter(sub => sub && sub.cloudSaved);
         
-        // 重複を除去して統合
-        const allSubmissions = [...submissions];
         cloudSubmissions.forEach(cloudSub => {
-            const isDuplicate = submissions.some(sub => 
-                sub.studentId === cloudSub.studentId && 
-                sub.testCode === cloudSub.testCode
+            const testCode = cloudSub.testCode || 'UNKNOWN';
+            if (!testCodeGroups[testCode]) {
+                testCodeGroups[testCode] = [];
+            }
+            const isDuplicate = testCodeGroups[testCode].some(existing => 
+                existing.studentId === cloudSub.studentId && 
+                existing.timestamp === cloudSub.timestamp
             );
             if (!isDuplicate) {
+                testCodeGroups[testCode].push(cloudSub);
                 allSubmissions.push(cloudSub);
             }
         });
         
-        console.log('Regular submissions:', submissions.length);
-        console.log('Cloud submissions:', cloudSubmissions.length);
+        console.log('Test code groups:', testCodeGroups);
         console.log('Total submissions:', allSubmissions.length);
         
         const container = document.getElementById('submissionResultsContainer');
@@ -2001,7 +2043,7 @@ function showSubmissionResults() {
         let html = `
             <h3>提出された解答一覧</h3>
             <div class="results-summary">
-                <p>総提出数: ${allSubmissions.length}件 ${cloudSubmissions.length > 0 ? `(異なる端末からの提出: ${cloudSubmissions.length}件)` : ''}</p>
+                <p>総提出数: ${allSubmissions.length}件 (テストコード数: ${Object.keys(testCodeGroups).length})</p>
                 <div class="admin-actions">
                     <button onclick="exportToExcel()" class="btn-primary">
                         📊 解答データをExcelでダウンロード
@@ -2017,7 +2059,22 @@ function showSubmissionResults() {
             <div class="results-list">
         `;
         
-        allSubmissions.forEach((submission, index) => {
+        // テストコード毎にグループ化して表示
+        Object.keys(testCodeGroups).sort().forEach(testCode => {
+            const submissions = testCodeGroups[testCode];
+            if (submissions.length === 0) return;
+            
+            // テストコード毎の提出日時で降順ソート
+            submissions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            html += `
+                <div class="test-code-group" style="margin: 20px 0; border: 2px solid #007aff; border-radius: 12px; padding: 20px; background: #f8f9ff;">
+                    <h4 style="margin: 0 0 15px 0; color: #007aff; font-size: 20px;">
+                        📝 テストコード: ${testCode} (${submissions.length}件の提出)
+                    </h4>
+            `;
+        
+            submissions.forEach((submission, index) => {
             const submitTime = new Date(submission.timestamp).toLocaleString('ja-JP');
             const duration = `${Math.floor(submission.totalTime / 60)}分${submission.totalTime % 60}秒`;
             
@@ -2071,9 +2128,12 @@ function showSubmissionResults() {
                     </div>
                 </div>
             `;
+            });
+            
+            html += `</div>`;  // test-code-group終了
         });
         
-        html += `</div>`;
+        html += `</div>`;  // results-list終了
         
         container.innerHTML = html;
         container.style.display = 'block';
@@ -2340,3 +2400,4 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 初期画面設定
     showScreen('login');
 });
+
