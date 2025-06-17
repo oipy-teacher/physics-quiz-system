@@ -846,22 +846,43 @@ async function generateShareUrl(data) {
             console.warn('Data URL is too long, may cause issues with QR codes');
         }
         
-        // テストコードとデータの関連付けをローカルに保存（フォールバック用）
-        localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
-            cloudSaved: true,
-            encodedData: encodedData,
-            testCode: testCode,
-            created: new Date().toISOString(),
-            dataUrl: dataUrl,
-            ...data
-        }));
+        // テストコードとデータの関連付けをローカルに保存（軽量版）
+        try {
+            // 軽量版データのみ保存（巨大なencodedDataは除外）
+            const lightweightData = {
+                testCode: testCode,
+                created: new Date().toISOString(),
+                cloudSaved: true,
+                questions: data.questions ? data.questions.length : 0,
+                hasAnswerExamples: data.answerExamples ? data.answerExamples.length > 0 : false,
+                lastUpdated: data.lastUpdated
+            };
+            localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightweightData));
+            console.log(`💾 Lightweight test code saved: ${testCode}`);
+        } catch (storageError) {
+            console.warn('Failed to save test code to localStorage:', storageError);
+            // 容量不足でも処理を続行
+        }
         
         return { testCode, cloudSaved: true, encodedData: encodedData, dataUrl: dataUrl };
     } catch (error) {
         console.error('Share URL generation error:', error);
-        // フォールバック：ローカルストレージのみ
+        // フォールバック：軽量版ローカルストレージ
         const testCode = generateShortId();
-        localStorage.setItem(`testCode_${testCode}`, JSON.stringify(data));
+        try {
+            const lightweightData = {
+                testCode: testCode,
+                created: new Date().toISOString(),
+                cloudSaved: false,
+                questions: data.questions ? data.questions.length : 0,
+                hasAnswerExamples: data.answerExamples ? data.answerExamples.length > 0 : false,
+                lastUpdated: data.lastUpdated
+            };
+            localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightweightData));
+            console.log(`💾 Fallback lightweight test code saved: ${testCode}`);
+        } catch (storageError) {
+            console.warn('Fallback storage also failed:', storageError);
+        }
         return { testCode, cloudSaved: false };
     }
 }
