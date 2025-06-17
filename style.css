@@ -1064,3 +1064,20 @@ input[type="file"] {
 .api-info a:hover {
     text-decoration: underline;
 }
+
+/* 手書き画像ダウンロードボタン */
+.export-images-button {
+    background-color: #fd7e14;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s;
+    margin: 5px;
+}
+
+.export-images-button:hover {
+    background-color: #e76500;
+}

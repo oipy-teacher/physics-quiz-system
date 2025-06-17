@@ -61,24 +61,7 @@
                 </div>
             </div>
 
-            <div class="section">
-                <h2>🤖 AI文字認識設定</h2>
-                <div class="api-config">
-                    <div class="api-status">
-                        <span id="claudeApiStatus" class="api-status-badge api-status-inactive">Claude API: 未設定</span>
-                    </div>
-                    <div class="api-input-group">
-                        <label for="claudeApiKey">Claude APIキー:</label>
-                        <input type="password" id="claudeApiKey" placeholder="sk-ant-api03-..." style="width: 100%; margin: 10px 0;">
-                        <button class="api-save-button" onclick="saveClaudeApiKey()">保存</button>
-                        <button class="api-test-button" onclick="testClaudeApi()">接続テスト</button>
-                    </div>
-                    <div class="api-info">
-                        <p><strong>Claude API</strong>は手書き文字認識の精度が非常に高く、物理の数式や単位も正確に読み取れます。</p>
-                        <p>APIキーは <a href="https://console.anthropic.com/" target="_blank">Anthropic Console</a> で取得できます。</p>
-                    </div>
-                </div>
-            </div>
+
 
             <div class="section">
                 <h2>📝 問題・解答例アップロード</h2>
@@ -119,17 +102,18 @@
             </div>
 
             <div class="section">
-                <h2>📊 提出結果確認</h2>
+                <h2>📊 解答データ確認</h2>
                 <div class="results-management">
-                    <button class="view-results-button" onclick="showSubmissionResults()">提出結果を表示</button>
+                    <button class="view-results-button" onclick="showSubmissionResults()">解答データを表示</button>
                     <button class="export-excel-button" onclick="exportToExcel()">Excelでダウンロード</button>
-                    <button class="clear-results-button" onclick="clearAllResults()">全結果をクリア</button>
+                    <button class="export-images-button" onclick="downloadHandwritingImages()">手書き画像をダウンロード (ZIP)</button>
+                    <button class="clear-results-button" onclick="clearAllResults()">全データをクリア</button>
                 </div>
                 
                 <div id="submissionResultsContainer" class="submission-results-container" style="display: none;">
-                    <h3>生徒提出結果一覧</h3>
+                    <h3>生徒解答データ一覧</h3>
                     <div id="submissionResultsList" class="submission-results-list">
-                        <!-- 提出結果がここに表示される -->
+                        <!-- 解答データがここに表示される -->
                     </div>
                 </div>
             </div>
@@ -197,17 +181,10 @@
         </div>
     </div>
 
-    <!-- 結果画面 -->
+    <!-- 提出完了画面 -->
     <div id="resultScreen">
         <div class="result-container">
-            <h2>テスト結果</h2>
-            <div class="score-display">
-                <span id="correctCount">0</span> / <span id="totalCount">3</span>
-            </div>
-            <div class="result-details" id="resultDetails">
-                <!-- 結果詳細がここに表示される -->
-            </div>
-            <button class="nav-button" onclick="backToLogin()">終了</button>
+            <!-- 提出完了メッセージがJavaScriptで動的に生成される -->
         </div>
     </div>
 

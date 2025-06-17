@@ -31,13 +31,6 @@ let gradingResults = [];
 // 管理者パスワード（実際の運用では環境変数やサーバー側で管理）
 const ADMIN_PASSWORD = 'physics2024';
 
-// Google Cloud Vision API設定（実際の運用では環境変数で管理）
-// Google Vision APIの使用方法：
-// 1. https://console.cloud.google.com/ にアクセス
-// 2. 新プロジェクト作成 → Vision API有効化
-// 3. APIキー生成 → 下記に設定
-const GOOGLE_CLOUD_API_KEY = 'YOUR_API_KEY_HERE'; // 実際のAPIキーに置き換え
-
 // 初期化
 window.onload = function() {
     // ローカルストレージから問題データを読み込む
@@ -217,17 +210,13 @@ async function studentLogin() {
 // 管理者ログイン
 function adminLogin() {
     const password = document.getElementById('adminPassword').value;
-    const errorDiv = document.getElementById('loginError');
-
-    if (password !== ADMIN_PASSWORD) {
-        errorDiv.textContent = 'パスワードが正しくありません';
-        errorDiv.style.display = 'block';
-        return;
+    
+    if (password === ADMIN_PASSWORD) {
+        showScreen('admin');
+        loadSavedQuestions();
+    } else {
+        showAdminError('パスワードが正しくありません。');
     }
-
-    errorDiv.style.display = 'none';
-    showScreen('admin');
-    updateTestStatus();
 }
 
 // 画面切り替え
@@ -1636,915 +1625,299 @@ async function submitTest() {
         // タイマー停止
         clearInterval(timerInterval);
         
-        // 採点処理を開始
-        showGradingProgress();
-        await performAdvancedGrading();
+        // 解答を保存
+        saveStudentAnswers();
         
-        // 結果画面表示
+        // 完了画面表示
         showScreen('result');
+        showSubmissionComplete();
     }
 }
 
-// ========== 高精度採点機能 ==========
+// ========== 解答回収機能 ==========
 
-// 採点進捗表示
-function showGradingProgress() {
-    // 進捗モーダルを表示
-    const progressModal = document.createElement('div');
-    progressModal.id = 'gradingProgressModal';
-    progressModal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.8);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 2000;
-    `;
-    
-    progressModal.innerHTML = `
-        <div style="background: white; padding: 40px; border-radius: 20px; text-align: center; max-width: 400px;">
-            <h3>採点中...</h3>
-            <div style="margin: 20px 0;">
-                <div id="gradingProgressBar" style="width: 100%; height: 20px; background: #f0f0f0; border-radius: 10px; overflow: hidden;">
-                    <div id="gradingProgressFill" style="width: 0%; height: 100%; background: #007aff; transition: width 0.3s;"></div>
-                </div>
-            </div>
-            <p id="gradingProgressText">手書き回答を解析しています...</p>
-        </div>
-    `;
-    
-    document.body.appendChild(progressModal);
-}
-
-// 高精度採点処理
-async function performAdvancedGrading() {
-    gradingResults = [];
-    
-    for (let i = 0; i < questions.length; i++) {
-        updateGradingProgress(i, questions.length, `問題${i + 1}を採点中...`);
-        
-        try {
-            const answer = testData.answers[i];
-            let ocrResult = { text: '', confidence: 0 };
-            
-            if (answer) {
-                if (answer.method === 'text' && answer.text) {
-                    // テキスト入力の場合
-                    ocrResult = { 
-                        fullText: answer.text,
-                        text: answer.text,
-                        confidence: 1.0,
-                        words: answer.text.split(/\s+/).filter(w => w.length > 0).map(word => ({ text: word, confidence: 1.0 }))
-                    };
-                    console.log(`Question ${i + 1} - Text input:`, answer.text);
-                } else if (answer.method === 'canvas' && answer.canvas) {
-                    // 手書き入力の場合はOCR処理
-                    ocrResult = await performOCR(answer.canvas);
-                    ocrResult.text = ocrResult.fullText || '';
-                    console.log(`Question ${i + 1} - Canvas OCR result:`, ocrResult.text);
-                } else {
-                    console.log(`Question ${i + 1} - No valid answer found`);
-                }
-            } else {
-                console.log(`Question ${i + 1} - No answer data`);
-            }
-            
-            ocrResults[i] = ocrResult;
-            
-            // 高度なパターンマッチング
-            const gradingResult = await performAdvancedPatternMatching(
-                ocrResult, 
-                questions[i].patterns, 
-                i
-            );
-            
-            // OCRソース情報を追加
-            gradingResult.ocrSource = ocrResult.source || 'unknown';
-            
-            gradingResults[i] = gradingResult;
-            
-        } catch (error) {
-            console.error(`Grading error for question ${i + 1}:`, error);
-            gradingResults[i] = {
-                correct: false,
-                confidence: 0,
-                recognizedText: 'エラー',
-                matchedPattern: null,
-                error: error.message
-            };
-        }
-        
-        // 進捗更新
-        await new Promise(resolve => setTimeout(resolve, 500)); // 視覚的な進捗表示
-    }
-    
-    // 進捗モーダルを閉じる
-    const progressModal = document.getElementById('gradingProgressModal');
-    if (progressModal) {
-        progressModal.remove();
-    }
-    
-    // 結果計算と表示
-    calculateResults();
-    
-    // 提出結果を保存
-    saveSubmissionResult();
-}
-
-// 採点進捗更新
-function updateGradingProgress(current, total, message) {
-    const progressFill = document.getElementById('gradingProgressFill');
-    const progressText = document.getElementById('gradingProgressText');
-    
-    if (progressFill) {
-        const percentage = ((current + 1) / total) * 100;
-        progressFill.style.width = `${percentage}%`;
-    }
-    
-    if (progressText) {
-        progressText.textContent = message;
-    }
-}
-
-// OCR処理（Claude API優先、フォールバック付き）
-async function performOCR(imageDataUrl) {
-    console.log('=== OCR処理開始 ===');
-    const claudeApiKey = localStorage.getItem('claudeApiKey');
-    console.log('Claude APIキー存在:', !!claudeApiKey);
-    
-    // Claude APIを最初に試行
-    try {
-        console.log('Claude API試行中...');
-        const claudeResult = await performClaudeOCR(imageDataUrl);
-        if (claudeResult && claudeResult.fullText) {
-            console.log('✅ Claude OCR成功:', claudeResult.fullText);
-            return claudeResult;
-        }
-    } catch (error) {
-        console.log('❌ Claude OCR失敗, Google Vision APIを試行:', error.message);
-    }
-    
-    // Google Cloud Vision APIを次に試行
-    if (GOOGLE_CLOUD_API_KEY !== 'YOUR_API_KEY_HERE') {
-        try {
-            console.log('Google Vision API試行中...');
-            const googleResult = await performGoogleOCR(imageDataUrl);
-            if (googleResult && googleResult.fullText) {
-                console.log('✅ Google Vision API成功:', googleResult.fullText);
-                return googleResult;
-            }
-        } catch (error) {
-            console.log('❌ Google Vision API失敗, Tesseractを試行:', error.message);
-        }
-    }
-    
-    // 最後にTesseractを試行
-    console.log('Tesseract試行中...');
-    const tesseractResult = await performFallbackOCR(imageDataUrl);
-    console.log('Tesseract結果:', tesseractResult.fullText || '認識失敗');
-    return tesseractResult;
-}
-
-// Claude API OCR処理
-async function performClaudeOCR(imageDataUrl) {
-    const CLAUDE_API_KEY = localStorage.getItem('claudeApiKey') || 'YOUR_CLAUDE_API_KEY_HERE';
-    
-    console.log('Claude OCR開始');
-    console.log('APIキー確認:', CLAUDE_API_KEY ? CLAUDE_API_KEY.substring(0, 20) + '...' : '未設定');
-    
-    if (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
-        throw new Error('Claude API key not configured');
-    }
-    
-    try {
-        // Base64データからimage部分を抽出
-        const base64Image = imageDataUrl.split(',')[1];
-        const mimeType = imageDataUrl.split(';')[0].split(':')[1];
-        
-        console.log('Claude APIリクエスト送信中...');
-        console.log('MIME type:', mimeType);
-        console.log('画像データサイズ:', Math.round(base64Image.length / 1024), 'KB');
-        
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': CLAUDE_API_KEY,
-                'anthropic-version': '2023-06-01'
-            },
-            body: JSON.stringify({
-                model: 'claude-3-5-sonnet-20241022',
-                max_tokens: 1000,
-                messages: [{
-                    role: 'user',
-                    content: [
-                        {
-                            type: 'text',
-                            text: '画像に書かれている文字や数式を正確に読み取ってください。物理の問題の回答として書かれた手書き文字です。数値、単位、数式、記号を含めて、見えるすべての文字を抽出してください。回答は読み取った文字のみを返してください。'
-                        },
-                        {
-                            type: 'image',
-                            source: {
-                                type: 'base64',
-                                media_type: mimeType,
-                                data: base64Image
-                            }
-                        }
-                    ]
-                }]
-            })
-        });
-        
-        console.log('Claude APIレスポンス受信:', response.status, response.statusText);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Claude API エラー詳細:', errorText);
-            throw new Error(`Claude API error: ${response.status} ${response.statusText} - ${errorText}`);
-        }
-        
-        const result = await response.json();
-        console.log('Claude API結果:', result);
-        
-        if (result.content && result.content[0] && result.content[0].text) {
-            const recognizedText = result.content[0].text.trim();
-            console.log('Claude認識テキスト:', recognizedText);
-            
-            return {
-                fullText: recognizedText,
-                words: recognizedText.split(/\s+/).filter(word => word.length > 0).map(word => ({
-                    text: word,
-                    confidence: 0.95 // Claude APIは高精度
-                })),
-                confidence: 0.95,
-                source: 'claude'
-            };
-        }
-        
-        throw new Error('No text content in Claude API response');
-        
-    } catch (error) {
-        console.error('Claude OCR エラー:', error);
-        throw error;
-    }
-}
-
-// Google Cloud Vision API OCR処理
-async function performGoogleOCR(imageDataUrl) {
-    try {
-        // Base64データからimage部分を抽出
-        const base64Image = imageDataUrl.split(',')[1];
-        
-        const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_CLOUD_API_KEY}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                requests: [{
-                    image: {
-                        content: base64Image
-                    },
-                    features: [
-                        { type: 'TEXT_DETECTION', maxResults: 10 },
-                        { type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 }
-                    ],
-                    imageContext: {
-                        languageHints: ['ja', 'en']
-                    }
-                }]
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.responses && result.responses[0]) {
-            const textAnnotations = result.responses[0].textAnnotations;
-            if (textAnnotations && textAnnotations.length > 0) {
-                return {
-                    fullText: textAnnotations[0].description,
-                    words: textAnnotations.slice(1).map(annotation => ({
-                        text: annotation.description,
-                        confidence: annotation.confidence || 0.9
-                    })),
-                    confidence: textAnnotations[0].confidence || 0.9,
-                    source: 'google'
-                };
-            }
-        }
-        
-        throw new Error('No text detected by Google Vision API');
-        
-    } catch (error) {
-        console.error('Google Cloud Vision API error:', error);
-        throw error;
-    }
-}
-
-// フォールバックOCR（Tesseract.js使用）
-async function performFallbackOCR(imageDataUrl) {
-    try {
-        // Tesseract.jsがロードされていない場合は動的ロード
-        if (typeof Tesseract === 'undefined') {
-            await loadTesseract();
-        }
-        
-        const { data: { text, confidence } } = await Tesseract.recognize(
-            imageDataUrl,
-            'jpn+eng',
-            {
-                logger: m => console.log(m)
-            }
-        );
-        
-        return {
-            fullText: text.trim(),
-            words: text.split(/\s+/).filter(word => word.length > 0).map(word => ({
-                text: word,
-                confidence: confidence / 100
-            })),
-            confidence: confidence / 100,
-            source: 'tesseract'
-        };
-        
-    } catch (error) {
-        console.error('Tesseract OCR error:', error);
-        return {
-            fullText: '',
-            words: [],
-            confidence: 0,
-            error: error.message
-        };
-    }
-}
-
-// Tesseract.js動的ロード
-async function loadTesseract() {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://unpkg.com/tesseract.js@4/dist/tesseract.min.js';
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-    });
-}
-
-// 高度なパターンマッチング
-async function performAdvancedPatternMatching(ocrResult, correctPatterns, questionIndex) {
-    const recognizedText = ocrResult.fullText || ocrResult.text || '';
-    console.log(`Pattern matching for question ${questionIndex + 1}:`);
-    console.log('Recognized text:', recognizedText);
-    console.log('Correct patterns:', correctPatterns);
-    
-    if (!correctPatterns || correctPatterns.length === 0) {
-        console.log('No correct patterns defined');
-        return {
-            correct: false,
-            confidence: 0,
-            recognizedText: recognizedText,
-            matchedPattern: null,
-            bestMatch: null,
-            allMatches: []
-        };
-    }
-    
-    let bestMatch = null;
-    let highestScore = 0;
-    let matchedPattern = null;
-    
-    for (const pattern of correctPatterns) {
-        const score = calculateMatchScore(recognizedText, pattern, ocrResult);
-        console.log(`Pattern "${pattern}" score:`, score);
-        
-        if (score > highestScore) {
-            highestScore = score;
-            matchedPattern = pattern;
-            bestMatch = {
-                pattern: pattern,
-                score: score,
-                recognizedText: recognizedText
-            };
-        }
-    }
-    
-    // 閾値を設定（70%以上で正解とする - テキスト入力の場合は厳密に）
-    const threshold = ocrResult.confidence === 1.0 ? 0.7 : 0.6; // テキスト入力は厳しく
-    const isCorrect = highestScore >= threshold;
-    
-    console.log(`Best match: "${matchedPattern}" with score ${highestScore}`);
-    console.log(`Threshold: ${threshold}, Correct: ${isCorrect}`);
-    
-    return {
-        correct: isCorrect,
-        confidence: highestScore,
-        recognizedText: recognizedText,
-        matchedPattern: matchedPattern,
-        bestMatch: bestMatch,
-        allMatches: correctPatterns.map(pattern => ({
-            pattern: pattern,
-            score: calculateMatchScore(recognizedText, pattern, ocrResult)
-        })).sort((a, b) => b.score - a.score)
-    };
-}
-
-// マッチスコア計算（複数の手法を組み合わせ）
-function calculateMatchScore(recognizedText, pattern, ocrResult) {
-    if (!recognizedText || !pattern) {
-        return 0;
-    }
-    
-    // 1. 正規化
-    const normalizedRecognized = normalizeText(recognizedText);
-    const normalizedPattern = normalizeText(pattern);
-    
-    console.log(`Comparing: "${normalizedRecognized}" vs "${normalizedPattern}"`);
-    
-    // 2. 完全一致チェック
-    if (normalizedRecognized === normalizedPattern) {
-        console.log('Exact match found!');
-        return 1.0;
-    }
-    
-    // 大文字小文字を無視した一致
-    if (normalizedRecognized.toLowerCase() === normalizedPattern.toLowerCase()) {
-        console.log('Case-insensitive match found!');
-        return 0.95;
-    }
-    
-    // 部分一致チェック（含まれているか）
-    if (normalizedRecognized.includes(normalizedPattern) || normalizedPattern.includes(normalizedRecognized)) {
-        console.log('Partial inclusion match found!');
-        return 0.9;
-    }
-    
-    // 3. 編集距離（レーベンシュタイン距離）
-    const editDistance = calculateLevenshteinDistance(normalizedRecognized, normalizedPattern);
-    const maxLength = Math.max(normalizedRecognized.length, normalizedPattern.length);
-    const editScore = maxLength > 0 ? 1 - (editDistance / maxLength) : 0;
-    
-    // 4. 部分一致スコア
-    const partialScore = calculatePartialMatchScore(normalizedRecognized, normalizedPattern);
-    
-    // 5. 数値・単位の特別処理
-    const numericScore = calculateNumericMatchScore(normalizedRecognized, normalizedPattern);
-    
-    // 6. 音韻類似度（カタカナ・ひらがな変換）
-    const phoneticScore = calculatePhoneticScore(normalizedRecognized, normalizedPattern);
-    
-    // 7. OCR信頼度を考慮
-    const confidenceWeight = ocrResult.confidence || 0.5;
-    
-    // 重み付き平均でスコア計算
-    const finalScore = (
-        editScore * 0.4 +
-        partialScore * 0.3 +
-        numericScore * 0.2 +
-        phoneticScore * 0.1
-    );
-    
-    // テキスト入力の場合は信頼度を高く保つ
-    const adjustedScore = ocrResult.confidence === 1.0 ? finalScore : finalScore * confidenceWeight;
-    
-    console.log(`Scores - Edit: ${editScore}, Partial: ${partialScore}, Numeric: ${numericScore}, Phonetic: ${phoneticScore}, Final: ${adjustedScore}`);
-    
-    return Math.min(1.0, Math.max(0, adjustedScore));
-}
-
-// テキスト正規化
-function normalizeText(text) {
-    return text
-        .toLowerCase()
-        .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)) // 全角数字を半角に
-        .replace(/[Ａ-Ｚａ-ｚ]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)) // 全角英字を半角に
-        .replace(/\s+/g, '') // 空白除去
-        .replace(/[.,、。]/g, '') // 句読点除去
-        .trim();
-}
-
-// レーベンシュタイン距離計算
-function calculateLevenshteinDistance(str1, str2) {
-    const matrix = [];
-    
-    for (let i = 0; i <= str2.length; i++) {
-        matrix[i] = [i];
-    }
-    
-    for (let j = 0; j <= str1.length; j++) {
-        matrix[0][j] = j;
-    }
-    
-    for (let i = 1; i <= str2.length; i++) {
-        for (let j = 1; j <= str1.length; j++) {
-            if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1,
-                    matrix[i][j - 1] + 1,
-                    matrix[i - 1][j] + 1
-                );
-            }
-        }
-    }
-    
-    return matrix[str2.length][str1.length];
-}
-
-// 部分一致スコア計算
-function calculatePartialMatchScore(recognized, pattern) {
-    if (recognized.includes(pattern) || pattern.includes(recognized)) {
-        const shorter = recognized.length < pattern.length ? recognized : pattern;
-        const longer = recognized.length >= pattern.length ? recognized : pattern;
-        return shorter.length / longer.length;
-    }
-    
-    // 共通部分文字列の長さを計算
-    let maxCommonLength = 0;
-    for (let i = 0; i < recognized.length; i++) {
-        for (let j = 0; j < pattern.length; j++) {
-            let commonLength = 0;
-            while (
-                i + commonLength < recognized.length &&
-                j + commonLength < pattern.length &&
-                recognized[i + commonLength] === pattern[j + commonLength]
-            ) {
-                commonLength++;
-            }
-            maxCommonLength = Math.max(maxCommonLength, commonLength);
-        }
-    }
-    
-    return maxCommonLength / Math.max(recognized.length, pattern.length);
-}
-
-// 数値マッチスコア計算
-function calculateNumericMatchScore(recognized, pattern) {
-    const recognizedNumbers = recognized.match(/\d+\.?\d*/g) || [];
-    const patternNumbers = pattern.match(/\d+\.?\d*/g) || [];
-    
-    if (recognizedNumbers.length === 0 && patternNumbers.length === 0) {
-        return 0.5; // 数値がない場合は中立
-    }
-    
-    if (recognizedNumbers.length !== patternNumbers.length) {
-        return 0.3; // 数値の個数が違う場合は低スコア
-    }
-    
-    let totalScore = 0;
-    for (let i = 0; i < recognizedNumbers.length; i++) {
-        const recNum = parseFloat(recognizedNumbers[i]);
-        const patNum = parseFloat(patternNumbers[i]);
-        
-        if (recNum === patNum) {
-            totalScore += 1.0;
-        } else {
-            // 数値の近似度を計算
-            const diff = Math.abs(recNum - patNum);
-            const avg = (recNum + patNum) / 2;
-            const similarity = Math.max(0, 1 - (diff / Math.max(avg, 1)));
-            totalScore += similarity;
-        }
-    }
-    
-    return totalScore / recognizedNumbers.length;
-}
-
-// 音韻類似度計算
-function calculatePhoneticScore(recognized, pattern) {
-    // ひらがな・カタカナの変換マップ
-    const hiraganaToKatakana = (str) => {
-        return str.replace(/[\u3041-\u3096]/g, (match) => {
-            return String.fromCharCode(match.charCodeAt(0) + 0x60);
-        });
-    };
-    
-    const katakanaToHiragana = (str) => {
-        return str.replace(/[\u30a1-\u30f6]/g, (match) => {
-            return String.fromCharCode(match.charCodeAt(0) - 0x60);
-        });
-    };
-    
-    // 両方をひらがなに統一して比較
-    const recognizedHiragana = katakanaToHiragana(recognized);
-    const patternHiragana = katakanaToHiragana(pattern);
-    
-    if (recognizedHiragana === patternHiragana) {
-        return 1.0;
-    }
-    
-    // 両方をカタカナに統一して比較
-    const recognizedKatakana = hiraganaToKatakana(recognized);
-    const patternKatakana = hiraganaToKatakana(pattern);
-    
-    if (recognizedKatakana === patternKatakana) {
-        return 1.0;
-    }
-    
-    return 0;
-}
-
-// 結果計算（高精度版）
-function calculateResults() {
-    console.log('calculateResults called');
-    console.log('gradingResults:', gradingResults);
-    console.log('questions:', questions);
-    console.log('answerExamples:', answerExamples);
-    
-    let correctCount = 0;
-    const results = [];
-    
-    questions.forEach((question, index) => {
-        const gradingResult = gradingResults[index];
-        const isCorrect = gradingResult ? gradingResult.correct : false;
-        
-        if (isCorrect) correctCount++;
-        
-        // 回答データを取得
-        const answer = testData.answers[index];
-        let userAnswerText = '未回答';
-        
-        if (answer) {
-            if (answer.method === 'text' && answer.text) {
-                userAnswerText = answer.text;
-            } else if (answer.method === 'canvas' && gradingResult) {
-                userAnswerText = gradingResult.recognizedText || '認識できませんでした';
-            }
-        }
-        
-        results.push({
-            questionNumber: index + 1,
-            correct: isCorrect,
-            userAnswer: userAnswerText,
-            correctAnswers: question.patterns || [],
-            confidence: gradingResult ? gradingResult.confidence : 0,
-            matchedPattern: gradingResult ? gradingResult.matchedPattern : null,
-            gradingDetails: gradingResult
-        });
-    });
-    
-    console.log('results:', results);
-    
-    // 結果表示
-    const correctCountElement = document.getElementById('correctCount');
-    const totalCountElement = document.getElementById('totalCount');
-    
-    if (correctCountElement) {
-        correctCountElement.textContent = correctCount;
-    }
-    
-    if (totalCountElement) {
-        totalCountElement.textContent = questions.length;
-    }
-    
-    const detailsContainer = document.getElementById('resultDetails');
-    if (detailsContainer) {
-        detailsContainer.innerHTML = results.map(result => `
-            <div class="result-item" style="flex-direction: column; align-items: flex-start; padding: 15px; background-color: white; border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 15px;">
-                <div style="display: flex; justify-content: space-between; width: 100%; margin-bottom: 15px;">
-                    <span style="font-size: 18px;"><strong>問題${result.questionNumber}</strong></span>
-                    <span class="${result.correct ? 'correct' : 'incorrect'}" style="font-weight: bold; padding: 5px 15px; border-radius: 20px; color: white; background-color: ${result.correct ? '#34c759' : '#ff3b30'};">
-                        ${result.correct ? '正解' : '不正解'}
-                    </span>
-                </div>
-                
-                <div class="your-answer" style="width: 100%; margin-bottom: 10px;">
-                    <strong>あなたの回答:</strong> ${result.userAnswer}
-                </div>
-                
-                <div class="correct-answers" style="width: 100%; margin-bottom: 10px;">
-                    <strong>模範解答:</strong> ${result.correctAnswers.join(', ') || '設定されていません'}
-                </div>
-                
-                ${answerExamples && answerExamples[result.questionNumber - 1] ? `
-                    <div style="margin: 10px 0; width: 100%;">
-                        <strong>解答例画像:</strong><br>
-                        <img src="${answerExamples[result.questionNumber - 1].image}" 
-                             style="max-width: 300px; max-height: 200px; border: 1px solid #e0e0e0; border-radius: 5px; margin-top: 5px;">
-                    </div>
-                ` : ''}
-                
-                ${result.matchedPattern ? `
-                    <div class="matched-pattern" style="width: 100%; margin-bottom: 10px;">
-                        <strong>マッチしたパターン:</strong> ${result.matchedPattern}
-                    </div>
-                ` : ''}
-                
-                <div style="font-size: 14px; color: #666; width: 100%;">
-                    <strong>判定信頼度:</strong> ${Math.round(result.confidence * 100)}%
-                    <div style="width: 100%; height: 8px; background-color: #e0e0e0; border-radius: 4px; margin-top: 5px;">
-                        <div style="width: ${Math.round(result.confidence * 100)}%; height: 100%; background: linear-gradient(90deg, #dc3545, #ffc107, #28a745); border-radius: 4px;"></div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-    } else {
-        console.error('resultDetails container not found');
-    }
-}
-
-// 不正検知設定
-function setupViolationDetection() {
-    // タブ離脱検知
-    document.addEventListener('visibilitychange', function() {
-        if (currentScreen === 'test' && document.hidden) {
-            violationCount++;
-            const violationCountElement = document.getElementById('violationCount');
-            if (violationCountElement) {
-                violationCountElement.textContent = violationCount;
-            }
-            showWarning();
-            
-            // 違反記録
-            testData.violations.push({
-                type: 'tab_switch',
-                timestamp: new Date(),
-                count: violationCount
-            });
-        }
-    });
-    
-    // 右クリック無効化
-    document.addEventListener('contextmenu', function(e) {
-        if (currentScreen === 'test') {
-            e.preventDefault();
-        }
-    });
-    
-    // キーボードショートカット無効化
-    document.addEventListener('keydown', function(e) {
-        if (currentScreen === 'test') {
-            // F12, Ctrl+Shift+I, Ctrl+U などを無効化
-            if (e.key === 'F12' || 
-                (e.ctrlKey && e.shiftKey && e.key === 'I') ||
-                (e.ctrlKey && e.key === 'u')) {
-                e.preventDefault();
-            }
-        }
-    });
-}
-
-function showWarning() {
-    const warningModal = document.getElementById('warningModal');
-    if (warningModal) {
-        warningModal.style.display = 'flex';
-    }
-}
-
-function closeWarning() {
-    const warningModal = document.getElementById('warningModal');
-    if (warningModal) {
-        warningModal.style.display = 'none';
-    }
-}
-
-// ========== 提出結果管理機能 ==========
-
-// 提出結果を保存
-function saveSubmissionResult() {
-    if (!studentId || !gradingResults || gradingResults.length === 0) {
-        console.error('No student ID or grading results to save');
-        return;
-    }
-    
-    // 正解数計算
-    let correctCount = 0;
-    const detailedResults = [];
-    
-    questions.forEach((question, index) => {
-        const gradingResult = gradingResults[index];
-        const isCorrect = gradingResult ? gradingResult.correct : false;
-        
-        if (isCorrect) correctCount++;
-        
-        // 回答データを取得
-        const answer = testData.answers[index];
-        let userAnswerText = '未回答';
-        
-        if (answer) {
-            if (answer.method === 'text' && answer.text) {
-                userAnswerText = answer.text;
-            } else if (answer.method === 'canvas' && gradingResult) {
-                userAnswerText = gradingResult.recognizedText || '認識できませんでした';
-            }
-        }
-        
-        detailedResults.push({
-            questionNumber: index + 1,
-            correct: isCorrect,
-            userAnswer: userAnswerText,
-            correctAnswers: question.patterns || [],
-            confidence: gradingResult ? gradingResult.confidence : 0,
-            matchedPattern: gradingResult ? gradingResult.matchedPattern : null
-        });
-    });
-    
-    const submissionResult = {
+// 学生の解答を保存
+function saveStudentAnswers() {
+    const submissionData = {
         studentId: studentId,
-        submissionTime: new Date().toLocaleString('ja-JP'),
-        timestamp: Date.now(),
-        score: correctCount,
-        totalQuestions: questions.length,
-        percentage: Math.round((correctCount / questions.length) * 100),
-        detailedResults: detailedResults,
-        testDuration: startTime ? Math.floor((new Date() - startTime) / 1000) : 0,
-        violationCount: violationCount
+        timestamp: new Date().toISOString(),
+        startTime: startTime,
+        endTime: new Date(),
+        totalTime: Math.floor((new Date() - startTime) / 1000),
+        violationCount: violationCount,
+        violations: testData.violations,
+        answers: testData.answers,
+        questions: questions.map(q => ({
+            id: q.id,
+            image: q.image,
+            patterns: q.patterns
+        }))
     };
     
     // ローカルストレージに保存
-    try {
-        const existingResults = JSON.parse(localStorage.getItem('physicsQuizSubmissions') || '[]');
+    const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+    submissions.push(submissionData);
+    localStorage.setItem('studentSubmissions', JSON.stringify(submissions));
+    
+    console.log('Student answers saved:', submissionData);
+}
+
+// 提出完了画面を表示
+function showSubmissionComplete() {
+    const resultContainer = document.querySelector('#resultScreen .result-container');
+    resultContainer.innerHTML = `
+        <h2>✅ 提出完了</h2>
+        <div style="text-align: center; margin: 30px 0;">
+            <div style="font-size: 24px; color: #28a745; margin-bottom: 20px;">
+                📝 解答が正常に提出されました
+            </div>
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                <p><strong>学籍番号:</strong> ${studentId}</p>
+                <p><strong>提出時刻:</strong> ${new Date().toLocaleString('ja-JP')}</p>
+                <p><strong>回答数:</strong> ${testData.answers.length} 問</p>
+                <p><strong>違反回数:</strong> ${violationCount} 回</p>
+            </div>
+            <div style="color: #6c757d; font-size: 14px; margin: 20px 0;">
+                解答は教員によって採点されます。<br>
+                結果については後日お知らせいたします。
+            </div>
+        </div>
+        <button class="nav-button" onclick="backToLogin()">終了</button>
+    `;
+}
+
+// ========== 不正検知設定 ==========
+
+// 違反検知設定
+function setupViolationDetection() {
+    // タブ切り替え検知
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden && currentScreen === 'test') {
+            violationCount++;
+            isTabSwitched = true;
+            showWarning();
+            console.log('Tab switch detected. Violation count:', violationCount);
+        }
+    });
+    
+    // 右クリック禁止
+    document.addEventListener('contextmenu', function(e) {
+        if (currentScreen === 'test') {
+            e.preventDefault();
+            violationCount++;
+            showWarning();
+            console.log('Right click detected. Violation count:', violationCount);
+        }
+    });
+    
+    // キーボードショートカット禁止
+    document.addEventListener('keydown', function(e) {
+        if (currentScreen === 'test') {
+            // F12, Ctrl+Shift+I, Ctrl+U等の開発者ツール系キー
+            if (e.key === 'F12' || 
+                (e.ctrlKey && e.shiftKey && e.key === 'I') ||
+                (e.ctrlKey && e.key === 'u') ||
+                (e.ctrlKey && e.shiftKey && e.key === 'J') ||
+                (e.ctrlKey && e.shiftKey && e.key === 'C')) {
+                e.preventDefault();
+                violationCount++;
+                isDevToolsOpen = true;
+                showWarning();
+                console.log('Developer tools key detected. Violation count:', violationCount);
+            }
+        }
+    });
+}
+
+// 警告表示
+function showWarning() {
+    const modal = document.getElementById('warningModal');
+    if (modal) {
+        modal.style.display = 'flex';
         
-        // 同じ学籍番号の既存結果を削除（最新のみ保持）
-        const filteredResults = existingResults.filter(result => result.studentId !== studentId);
-        filteredResults.push(submissionResult);
+        // 違反の種類に応じてメッセージを変更
+        const message = document.getElementById('warningMessage');
+        if (message) {
+            if (isTabSwitched) {
+                message.textContent = '画面を切り替えることは禁止されています。';
+                isTabSwitched = false;
+            } else if (isDevToolsOpen) {
+                message.textContent = '開発者ツールの使用は禁止されています。';
+                isDevToolsOpen = false;
+            } else {
+                message.textContent = '不正な操作が検知されました。';
+            }
+        }
         
-        localStorage.setItem('physicsQuizSubmissions', JSON.stringify(filteredResults));
-        console.log('Submission result saved:', submissionResult);
-    } catch (error) {
-        console.error('Failed to save submission result:', error);
+        // 5秒後に自動で閉じる
+        setTimeout(() => {
+            closeWarning();
+        }, 5000);
     }
 }
 
-// 提出結果一覧を表示
-function showSubmissionResults() {
-    const container = document.getElementById('submissionResultsContainer');
-    const listContainer = document.getElementById('submissionResultsList');
-    
-    if (!container || !listContainer) {
-        showAdminError('結果表示エリアが見つかりません。');
-        return;
+// 警告を閉じる
+function closeWarning() {
+    const modal = document.getElementById('warningModal');
+    if (modal) {
+        modal.style.display = 'none';
     }
-    
+}
+
+// ========== 結果保存・表示 ==========
+
+// 学生の解答を保存
+function saveSubmissionResult() {
     try {
-        const submissions = JSON.parse(localStorage.getItem('physicsQuizSubmissions') || '[]');
+        if (!currentTestData || !userAnswers) {
+            console.error('No test data or answers available');
+            return;
+        }
+        
+        const submissionData = {
+            studentId: currentStudentId,
+            testCode: currentTestCode,
+            timestamp: new Date().toISOString(),
+            answers: userAnswers,
+            questions: currentTestData.questions,
+            violationCount: violationCount,
+            totalTime: Math.floor((new Date() - testStartTime) / 1000),
+            isCompleted: true
+        };
+        
+        // ローカルストレージに保存
+        const existingSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        
+        // 同じ学生IDの古い提出を削除
+        const filteredSubmissions = existingSubmissions.filter(sub => sub.studentId !== currentStudentId);
+        filteredSubmissions.push(submissionData);
+        
+        localStorage.setItem('studentSubmissions', JSON.stringify(filteredSubmissions));
+        
+        console.log('Submission saved successfully:', submissionData);
+        
+    } catch (error) {
+        console.error('Failed to save submission:', error);
+    }
+}
+
+// 提出結果一覧表示
+function showSubmissionResults() {
+    try {
+        const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        const container = document.getElementById('submissionResultsContainer');
+        
+        if (!container) {
+            console.error('Results container not found');
+            return;
+        }
         
         if (submissions.length === 0) {
-            listContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">まだ提出結果がありません。</p>';
+            container.innerHTML = `
+                <div class="no-results">
+                    <p>まだ提出された解答がありません。</p>
+                </div>
+            `;
             container.style.display = 'block';
             return;
         }
         
-        // 提出時間順でソート（新しい順）
-        submissions.sort((a, b) => b.timestamp - a.timestamp);
+        // 提出日時で降順ソート
+        submissions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         
-        listContainer.innerHTML = submissions.map(submission => `
-            <div class="submission-result-item">
-                <div class="student-header">
-                    <div class="student-id">学籍番号: ${submission.studentId}</div>
-                    <div class="submission-time">提出日時: ${submission.submissionTime}</div>
-                </div>
-                
-                <div class="score-summary">
-                    <div class="score-badge">${submission.score} / ${submission.totalQuestions}</div>
-                    <div class="score-percentage">正答率: ${submission.percentage}%</div>
-                    <div class="score-percentage">所要時間: ${Math.floor(submission.testDuration / 60)}分${submission.testDuration % 60}秒</div>
-                    <div class="score-percentage ${submission.violationCount > 0 ? 'violation-warning' : ''}">
-                        不正行為: ${submission.violationCount}回
-                    </div>
-                </div>
-                
-                <div class="question-details">
-                    ${submission.detailedResults.map(result => `
-                        <div class="question-detail ${result.correct ? 'correct' : 'incorrect'}">
-                            <div class="question-detail-header">
-                                <span class="question-number">問題${result.questionNumber}</span>
-                                <span class="result-status ${result.correct ? 'correct' : 'incorrect'}">
-                                    ${result.correct ? '正解' : '不正解'}
-                                </span>
-                            </div>
-                            <div class="answer-comparison">
-                                <div class="student-answer"><strong>回答:</strong> ${result.userAnswer}</div>
-                                <div class="correct-answer"><strong>正解:</strong> ${result.correctAnswers.join(', ')}</div>
-                                ${result.matchedPattern ? `<div style="color: #28a745; font-size: 12px;"><strong>マッチ:</strong> ${result.matchedPattern}</div>` : ''}
-                                <div style="color: #666; font-size: 12px;"><strong>信頼度:</strong> ${Math.round(result.confidence * 100)}%</div>
-                                ${result.ocrSource ? `<div style="color: #007aff; font-size: 11px;"><strong>認識:</strong> ${result.ocrSource === 'claude' ? 'Claude API' : result.ocrSource === 'google' ? 'Google Vision' : 'Tesseract'}</div>` : ''}
-                            </div>
-                        </div>
-                    `).join('')}
+        let html = `
+            <h3>提出された解答一覧</h3>
+            <div class="results-summary">
+                <p>総提出数: ${submissions.length}件</p>
+                <div class="admin-actions">
+                    <button onclick="exportToExcel()" class="btn-primary">
+                        📊 解答データをExcelでダウンロード
+                    </button>
+                    <button onclick="downloadHandwritingImages()" class="btn-secondary">
+                        🖼️ 手書き画像をZIPでダウンロード
+                    </button>
+                    <button onclick="clearAllResults()" class="btn-danger">
+                        🗑️ 全データ削除
+                    </button>
                 </div>
             </div>
-        `).join('');
+            <div class="results-list">
+        `;
         
+        submissions.forEach((submission, index) => {
+            const submitTime = new Date(submission.timestamp).toLocaleString('ja-JP');
+            const duration = `${Math.floor(submission.totalTime / 60)}分${submission.totalTime % 60}秒`;
+            
+            // 解答数とタイプの集計
+            const answeredCount = submission.answers.filter(a => 
+                (a.method === 'text' && a.text) || 
+                (a.method === 'canvas' && a.canvas)
+            ).length;
+            
+            const textAnswers = submission.answers.filter(a => a.method === 'text' && a.text).length;
+            const handwritingAnswers = submission.answers.filter(a => a.method === 'canvas' && a.canvas).length;
+            
+            html += `
+                <div class="submission-item">
+                    <div class="submission-header">
+                        <h4>学籍番号: ${submission.studentId}</h4>
+                        <div class="submission-meta">
+                            <span class="timestamp">提出日時: ${submitTime}</span>
+                            <span class="duration">所要時間: ${duration}</span>
+                            <span class="violations">違反回数: ${submission.violationCount}回</span>
+                        </div>
+                    </div>
+                    <div class="submission-stats">
+                        <span class="answered-count">解答数: ${answeredCount}/${submission.questions.length}問</span>
+                        <span class="text-count">テキスト入力: ${textAnswers}問</span>
+                        <span class="handwriting-count">手書き入力: ${handwritingAnswers}問</span>
+                    </div>
+                    <div class="submission-answers">
+                        ${submission.answers.map((answer, qIndex) => {
+                            const question = submission.questions[qIndex];
+                            let answerContent = '';
+                            
+                            if (answer.method === 'text' && answer.text) {
+                                answerContent = `<span class="text-answer">${answer.text}</span>`;
+                            } else if (answer.method === 'canvas' && answer.canvas) {
+                                answerContent = '<span class="canvas-answer">手書き画像（ZIPダウンロードで確認）</span>';
+                            } else {
+                                answerContent = '<span class="no-answer">未回答</span>';
+                            }
+                            
+                            return `
+                                <div class="answer-item">
+                                    <div class="question-number">問題${qIndex + 1}</div>
+                                    <div class="answer-content">${answerContent}</div>
+                                    <div class="answer-patterns">
+                                        正解パターン: ${question.patterns ? question.patterns.join(', ') : '設定なし'}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `</div>`;
+        
+        container.innerHTML = html;
         container.style.display = 'block';
-        showAdminSuccess(`${submissions.length}件の提出結果を表示しました。`);
         
     } catch (error) {
-        console.error('Failed to load submission results:', error);
-        showAdminError('提出結果の読み込みに失敗しました。');
+        console.error('Failed to show submission results:', error);
+        showAdminError('提出結果の表示に失敗しました。');
     }
 }
 
-// Excelファイルとしてダウンロード
+// 解答データをExcelファイルとしてダウンロード
 function exportToExcel() {
     try {
-        const submissions = JSON.parse(localStorage.getItem('physicsQuizSubmissions') || '[]');
+        const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
         
         if (submissions.length === 0) {
-            showAdminError('エクスポートする提出結果がありません。');
+            showAdminError('エクスポートする解答データがありません。');
             return;
         }
         
@@ -2552,39 +1925,42 @@ function exportToExcel() {
         let csvContent = '\uFEFF'; // BOM for UTF-8
         
         // ヘッダー行
-        csvContent += '学籍番号,提出日時,得点,総問題数,正答率(%),所要時間(秒),不正行為回数';
+        csvContent += '学籍番号,提出日時,解答数,所要時間(秒),違反回数';
         
         // 問題ごとの詳細ヘッダーを追加
-        const maxQuestions = Math.max(...submissions.map(s => s.totalQuestions));
+        const maxQuestions = Math.max(...submissions.map(s => s.answers.length));
         for (let i = 1; i <= maxQuestions; i++) {
-            csvContent += `,問題${i}_結果,問題${i}_回答,問題${i}_正解,問題${i}_信頼度(%)`;
+            csvContent += `,問題${i}_入力方式,問題${i}_回答内容,問題${i}_解答パターン`;
         }
         csvContent += '\n';
         
         // データ行
-        submissions.sort((a, b) => b.timestamp - a.timestamp).forEach(submission => {
+        submissions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).forEach(submission => {
             const row = [
                 submission.studentId,
-                submission.submissionTime,
-                submission.score,
-                submission.totalQuestions,
-                submission.percentage,
-                submission.testDuration,
+                new Date(submission.timestamp).toLocaleString('ja-JP'),
+                submission.answers.length,
+                submission.totalTime,
                 submission.violationCount
             ];
             
             // 問題ごとの詳細データを追加
             for (let i = 0; i < maxQuestions; i++) {
-                const result = submission.detailedResults[i];
-                if (result) {
+                const answer = submission.answers[i];
+                const question = submission.questions[i];
+                
+                if (answer) {
+                    const answerText = answer.method === 'text' ? 
+                        (answer.text || '未回答') : 
+                        (answer.canvas ? '手書き画像データ' : '未回答');
+                    
                     row.push(
-                        result.correct ? '正解' : '不正解',
-                        `"${result.userAnswer.replace(/"/g, '""')}"`, // CSVエスケープ
-                        `"${result.correctAnswers.join(', ').replace(/"/g, '""')}"`,
-                        Math.round(result.confidence * 100)
+                        answer.method === 'text' ? 'テキスト入力' : '手書き入力',
+                        `"${answerText.replace(/"/g, '""')}"`, // CSVエスケープ
+                        `"${question?.patterns?.join(', ') || '設定なし'}"`
                     );
                 } else {
-                    row.push('', '', '', '');
+                    row.push('未回答', '', '');
                 }
             }
             
@@ -2597,7 +1973,7 @@ function exportToExcel() {
         const url = URL.createObjectURL(blob);
         
         const now = new Date();
-        const filename = `物理テスト結果_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.csv`;
+        const filename = `物理テスト解答データ_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.csv`;
         
         link.setAttribute('href', url);
         link.setAttribute('download', filename);
@@ -2606,7 +1982,7 @@ function exportToExcel() {
         link.click();
         document.body.removeChild(link);
         
-        showAdminSuccess(`${submissions.length}件の結果をExcelファイル（${filename}）としてダウンロードしました。`);
+        showAdminSuccess(`${submissions.length}件の解答データをExcelファイル（${filename}）としてダウンロードしました。`);
         
     } catch (error) {
         console.error('Failed to export to Excel:', error);
@@ -2614,124 +1990,121 @@ function exportToExcel() {
     }
 }
 
-// 全提出結果をクリア
+// 手書き画像をZIPファイルでダウンロード
+async function downloadHandwritingImages() {
+    try {
+        const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        
+        if (submissions.length === 0) {
+            showAdminError('ダウンロードする解答データがありません。');
+            return;
+        }
+        
+        // JSZipライブラリを動的ロード
+        if (typeof JSZip === 'undefined') {
+            await loadJSZip();
+        }
+        
+        const zip = new JSZip();
+        let hasHandwritingData = false;
+        
+        // 各学生の解答を処理
+        submissions.forEach(submission => {
+            const studentFolder = zip.folder(`学籍番号_${submission.studentId}`);
+            
+            // 学生情報ファイルを作成
+            const studentInfo = `学籍番号: ${submission.studentId}
+提出日時: ${new Date(submission.timestamp).toLocaleString('ja-JP')}
+所要時間: ${Math.floor(submission.totalTime / 60)}分${submission.totalTime % 60}秒
+違反回数: ${submission.violationCount}回
+解答数: ${submission.answers.length}問
+
+問題別解答:
+${submission.answers.map((answer, index) => {
+    const question = submission.questions[index];
+    return `
+問題${index + 1}:
+  入力方式: ${answer.method === 'text' ? 'テキスト入力' : '手書き入力'}
+  回答内容: ${answer.method === 'text' ? (answer.text || '未回答') : (answer.canvas ? '手書き画像（画像ファイル参照）' : '未回答')}
+  解答パターン: ${question?.patterns?.join(', ') || '設定なし'}`;
+}).join('\n')}
+`;
+            
+            studentFolder.file('解答情報.txt', studentInfo);
+            
+            // 手書き画像を追加
+            submission.answers.forEach((answer, index) => {
+                if (answer.method === 'canvas' && answer.canvas) {
+                    // Base64データから画像データを抽出
+                    const imageData = answer.canvas.split(',')[1];
+                    studentFolder.file(`問題${index + 1}_手書き解答.png`, imageData, {base64: true});
+                    hasHandwritingData = true;
+                }
+            });
+        });
+        
+        if (!hasHandwritingData) {
+            showAdminError('手書きの解答データがありません。');
+            return;
+        }
+        
+        // ZIPファイル生成とダウンロード
+        showAdminSuccess('画像ファイルを準備中...');
+        
+        const zipBlob = await zip.generateAsync({type: 'blob'});
+        
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(zipBlob);
+        
+        const now = new Date();
+        const filename = `物理テスト手書き解答_${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}.zip`;
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        showAdminSuccess(`手書き解答画像をZIPファイル（${filename}）としてダウンロードしました。`);
+        
+    } catch (error) {
+        console.error('Failed to download handwriting images:', error);
+        showAdminError('手書き画像のダウンロードに失敗しました。');
+    }
+}
+
+// JSZipライブラリを動的ロード
+async function loadJSZip() {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+// 全解答データをクリア
 function clearAllResults() {
-    if (confirm('全ての提出結果を削除しますか？この操作は取り消せません。')) {
+    if (confirm('全ての解答データを削除しますか？この操作は取り消せません。')) {
         try {
-            localStorage.removeItem('physicsQuizSubmissions');
+            localStorage.removeItem('studentSubmissions');
             
             const container = document.getElementById('submissionResultsContainer');
             if (container) {
                 container.style.display = 'none';
             }
             
-            showAdminSuccess('全ての提出結果を削除しました。');
+            showAdminSuccess('全ての解答データを削除しました。');
         } catch (error) {
-            console.error('Failed to clear submission results:', error);
-            showAdminError('提出結果の削除に失敗しました。');
+            console.error('Failed to clear student submissions:', error);
+            showAdminError('解答データの削除に失敗しました。');
         }
     }
 }
 
-// ========== Claude API管理機能 ==========
 
-// Claude APIキーを保存
-function saveClaudeApiKey() {
-    const apiKeyInput = document.getElementById('claudeApiKey');
-    const apiKey = apiKeyInput.value.trim();
-    
-    if (!apiKey) {
-        showAdminError('APIキーを入力してください。');
-        return;
-    }
-    
-    if (!apiKey.startsWith('sk-ant-api03-')) {
-        showAdminError('有効なClaude APIキーを入力してください（sk-ant-api03-で始まる）。');
-        return;
-    }
-    
-    try {
-        localStorage.setItem('claudeApiKey', apiKey);
-        updateClaudeApiStatus();
-        showAdminSuccess('Claude APIキーを保存しました。文字認識でClaude APIが優先的に使用されます。');
-        
-        // デバッグ用: 保存されたキーを確認
-        console.log('Claude API key saved:', apiKey.substring(0, 20) + '...');
-        
-        // 入力フィールドをクリア（セキュリティのため）
-        apiKeyInput.value = '';
-    } catch (error) {
-        console.error('Failed to save Claude API key:', error);
-        showAdminError('APIキーの保存に失敗しました。');
-    }
-}
-
-// Claude API接続テスト
-async function testClaudeApi() {
-    const apiKey = localStorage.getItem('claudeApiKey');
-    
-    if (!apiKey) {
-        showAdminError('まずAPIキーを保存してください。');
-        return;
-    }
-    
-    console.log('Testing Claude API with key:', apiKey.substring(0, 20) + '...');
-    
-    try {
-        // テスト用の小さな画像を作成
-        const canvas = document.createElement('canvas');
-        canvas.width = 100;
-        canvas.height = 50;
-        const ctx = canvas.getContext('2d');
-        
-        // 白背景に黒文字でテスト
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, 100, 50);
-        ctx.fillStyle = 'black';
-        ctx.font = '20px Arial';
-        ctx.fillText('TEST', 10, 30);
-        
-        const testImageData = canvas.toDataURL();
-        
-        showAdminSuccess('Claude API接続テスト中...');
-        
-        const result = await performClaudeOCR(testImageData);
-        
-        if (result && result.fullText) {
-            showAdminSuccess(`Claude API接続成功！認識結果: "${result.fullText}"`);
-            updateClaudeApiStatus(true);
-        } else {
-            showAdminError('Claude API接続は成功しましたが、文字認識結果が空でした。');
-        }
-        
-    } catch (error) {
-        console.error('Claude API test failed:', error);
-        showAdminError(`Claude API接続テスト失敗: ${error.message}`);
-        updateClaudeApiStatus(false);
-    }
-}
-
-// Claude API状態表示を更新
-function updateClaudeApiStatus(isActive = null) {
-    const statusElement = document.getElementById('claudeApiStatus');
-    const apiKey = localStorage.getItem('claudeApiKey');
-    
-    if (!statusElement) return;
-    
-    if (isActive === null) {
-        isActive = !!apiKey;
-    }
-    
-    if (isActive && apiKey) {
-        statusElement.textContent = 'Claude API: 設定済み ✓';
-        statusElement.className = 'api-status-badge api-status-active';
-        console.log('Claude API status: ACTIVE');
-    } else {
-        statusElement.textContent = 'Claude API: 未設定';
-        statusElement.className = 'api-status-badge api-status-inactive';
-        console.log('Claude API status: INACTIVE');
-    }
-}
 
 // ========== 初期化処理 ==========
 
@@ -2743,7 +2116,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     setupDragAndDrop();
     await loadSavedQuestions();
     updateTestStatus();
-    updateClaudeApiStatus();
     setupViolationDetection();
     
     // キャンバス初期化（テスト画面表示時に実行）
@@ -2770,16 +2142,3 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 初期画面設定
     showScreen('login');
 });
-
-// セキュリティ重要！！！
-// 本番環境では以下の方法でAPIキーを管理：
-// 1. 環境変数での管理
-// 2. サーバーサイドプロキシ経由
-// 3. ドメイン制限付きAPIキー
-// 4. 絶対にGitHubにAPIキーをコミットしない
-
-// 開発用の安全な設定（ローカルストレージ使用）
-function loadSecureApiKey(keyName) {
-    // ローカルストレージから読み込み（ブラウザ内でのみ管理）
-    return localStorage.getItem(keyName);
-}
