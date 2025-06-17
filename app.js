@@ -2730,9 +2730,10 @@ async function downloadFirebaseImages() {
                 
                 for (const fileRef of files.items) {
                     try {
-                        const url = await fileRef.getDownloadURL();
-                        const response = await fetch(url);
-                        const blob = await response.blob();
+                        // Firebase SDKのgetBytes()メソッドを使用してCORS問題を回避
+                        const maxDownloadSizeBytes = 50 * 1024 * 1024; // 50MB
+                        const arrayBuffer = await fileRef.getBytes(maxDownloadSizeBytes);
+                        const blob = new Blob([arrayBuffer]);
                         
                         studentFolder.file(fileRef.name, blob);
                         processedFiles++;
