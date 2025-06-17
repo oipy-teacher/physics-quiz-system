@@ -1971,7 +1971,7 @@ function closeWarning() {
 // ========== 結果保存・表示 ==========
 
 // 学生の解答を保存（統一版）
-function saveSubmissionResult() {
+async function saveSubmissionResult() {
     try {
         console.log('=== saveSubmissionResult called ===');
         console.log('currentStudentId:', currentStudentId);
@@ -2083,12 +2083,137 @@ function saveSubmissionResult() {
         const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
         console.log('Verification - submissions after save:', savedSubmissions);
         
-        alert(`提出完了！学籍番号: ${finalStudentId} の解答を保存しました。`);
+        // 提出データを教員に送信する仕組みを実装
+        const submitSuccess = await sendSubmissionToTeacher(submissionData, finalTestCode);
+        
+        if (submitSuccess) {
+            alert(`提出完了！学籍番号: ${finalStudentId} の解答を保存しました。\n\n教員への送信も完了しました。`);
+        } else {
+            alert(`提出完了！学籍番号: ${finalStudentId} の解答を保存しました。\n\n注意: 教員への自動送信に失敗しました。\n手動で提出完了を報告してください。`);
+        }
         
     } catch (error) {
         console.error('Failed to save submission:', error);
         alert('解答の保存に失敗しました: ' + error.message);
     }
+}
+
+// 教員への提出データ送信
+async function sendSubmissionToTeacher(submissionData, testCode) {
+    try {
+        console.log('Attempting to send submission to teacher...');
+        
+        // 方法1: URL経由での教員ページへのリダイレクト
+        const encodedData = btoa(encodeURIComponent(JSON.stringify({
+            type: 'submission',
+            data: submissionData,
+            testCode: testCode,
+            timestamp: new Date().toISOString()
+        })));
+        
+        // 教員用の受信URLを生成
+        const teacherUrl = `${window.location.origin}${window.location.pathname}?submission=${encodedData}`;
+        
+        console.log('Teacher URL generated:', teacherUrl);
+        
+        // 方法2: 教員のブラウザが開いていれば localStorage を通じて送信
+        const globalSubmissionKey = `global_submission_${testCode}_${submissionData.studentId}_${Date.now()}`;
+        
+        try {
+            // グローバルな提出データとして保存
+            localStorage.setItem(globalSubmissionKey, JSON.stringify({
+                ...submissionData,
+                globalSubmission: true,
+                teacherUrl: teacherUrl,
+                receivedAt: new Date().toISOString()
+            }));
+            
+            // 教員通知キューに追加
+            const notificationQueue = JSON.parse(localStorage.getItem('teacher_notifications') || '[]');
+            notificationQueue.push({
+                type: 'new_submission',
+                studentId: submissionData.studentId,
+                testCode: testCode,
+                timestamp: new Date().toISOString(),
+                dataKey: globalSubmissionKey
+            });
+            localStorage.setItem('teacher_notifications', JSON.stringify(notificationQueue));
+            
+            console.log('Submission added to teacher notification queue');
+            
+        } catch (e) {
+            console.warn('Failed to add to notification queue:', e);
+        }
+        
+        // 方法3: 提出完了画面で教員URLを表示
+        showSubmissionCompleteWithTeacherLink(teacherUrl, submissionData);
+        
+        return true;
+        
+    } catch (error) {
+        console.error('Failed to send submission to teacher:', error);
+        return false;
+    }
+}
+
+// 教員リンク付きの提出完了画面
+function showSubmissionCompleteWithTeacherLink(teacherUrl, submissionData) {
+    const resultContainer = document.querySelector('#resultScreen .result-container');
+    const finalStudentId = submissionData.studentId;
+    
+    resultContainer.innerHTML = `
+        <h2>✅ 提出完了</h2>
+        <div style="text-align: center; margin: 30px 0;">
+            <div style="font-size: 24px; color: #28a745; margin-bottom: 20px;">
+                📝 解答が正常に提出されました
+            </div>
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                <p><strong>学籍番号:</strong> ${finalStudentId}</p>
+                <p><strong>提出時刻:</strong> ${new Date(submissionData.timestamp).toLocaleString('ja-JP')}</p>
+                <p><strong>テストコード:</strong> ${submissionData.testCode}</p>
+            </div>
+            
+            <div style="background: #d4edda; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #c3e6cb;">
+                <h4 style="color: #155724; margin-top: 0;">📤 教員への提出報告</h4>
+                <p style="color: #155724; margin: 10px 0;">
+                    以下のリンクを教員に送信するか、教員にアクセスしてもらってください：
+                </p>
+                <div style="background: white; padding: 15px; border-radius: 5px; margin: 10px 0; word-break: break-all; font-family: monospace; font-size: 12px;">
+                    ${teacherUrl}
+                </div>
+                <button onclick="copyToClipboard('${teacherUrl}')" 
+                        style="background: #007aff; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin: 5px; cursor: pointer;">
+                    📋 リンクをコピー
+                </button>
+                <button onclick="window.open('${teacherUrl}', '_blank')" 
+                        style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin: 5px; cursor: pointer;">
+                    🔗 新しいタブで開く
+                </button>
+            </div>
+            
+            <div style="color: #6c757d; font-size: 14px; margin: 20px 0;">
+                解答は確実に保存されました。<br>
+                教員が上記のリンクにアクセスすることで、提出データを確認できます。
+            </div>
+        </div>
+        <button class="nav-button" onclick="backToLogin()">終了</button>
+    `;
+}
+
+// クリップボードコピー機能
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        alert('リンクをクリップボードにコピーしました！');
+    }).catch(() => {
+        // フォールバック
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        alert('リンクをクリップボードにコピーしました！');
+    });
 }
 
 // 提出結果一覧表示
@@ -2535,11 +2660,227 @@ function clearAllResults() {
 
 
 
+// ========== URLパラメータ処理 ==========
+
+// URLパラメータから提出データや他の情報を処理
+function checkUrlParameters() {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // 提出データの受信
+    if (urlParams.has('submission')) {
+        handleSubmissionReceived(urlParams.get('submission'));
+    }
+    
+    // 教員通知の確認
+    checkTeacherNotifications();
+}
+
+// 提出データ受信処理
+function handleSubmissionReceived(encodedSubmission) {
+    try {
+        console.log('Submission data received via URL');
+        
+        const decodedData = JSON.parse(decodeURIComponent(atob(encodedSubmission)));
+        const submissionData = decodedData.data;
+        const testCode = decodedData.testCode;
+        
+        console.log('Decoded submission:', submissionData);
+        
+        // 提出データを localStorage に保存
+        const submissionKey = `submissions_${testCode}`;
+        const existingSubmissions = JSON.parse(localStorage.getItem(submissionKey) || '[]');
+        
+        // 重複チェック
+        const isDuplicate = existingSubmissions.some(sub => 
+            sub.studentId === submissionData.studentId && 
+            sub.timestamp === submissionData.timestamp
+        );
+        
+        if (!isDuplicate) {
+            // 新しい提出として追加
+            submissionData.receivedViaUrl = true;
+            submissionData.urlReceivedAt = new Date().toISOString();
+            
+            existingSubmissions.push(submissionData);
+            localStorage.setItem(submissionKey, JSON.stringify(existingSubmissions));
+            
+            // 総合リストにも追加
+            const allSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+            allSubmissions.push(submissionData);
+            localStorage.setItem('studentSubmissions', JSON.stringify(allSubmissions));
+            
+            console.log('Submission successfully saved from URL');
+            
+            // 成功通知を表示
+            showSubmissionReceivedNotification(submissionData, testCode);
+        } else {
+            console.log('Duplicate submission ignored');
+            showSubmissionAlreadyReceivedNotification(submissionData);
+        }
+        
+        // URLから提出パラメータを削除（履歴を汚さないため）
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+        
+    } catch (error) {
+        console.error('Failed to process submission from URL:', error);
+        alert('提出データの処理に失敗しました: ' + error.message);
+    }
+}
+
+// 提出受信通知を表示
+function showSubmissionReceivedNotification(submissionData, testCode) {
+    // 通知バナーを作成
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #d4edda;
+        color: #155724;
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #c3e6cb;
+        z-index: 1000;
+        max-width: 400px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    `;
+    
+    notification.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 10px;">
+            ✅ 新しい提出を受信しました
+        </div>
+        <div>
+            <strong>学籍番号:</strong> ${submissionData.studentId}<br>
+            <strong>テストコード:</strong> ${testCode}<br>
+            <strong>提出時刻:</strong> ${new Date(submissionData.timestamp).toLocaleString('ja-JP')}
+        </div>
+        <button onclick="this.parentElement.remove(); adminLogin(); showScreen('admin');" 
+                style="background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 5px; margin-top: 10px; cursor: pointer;">
+            管理画面で確認
+        </button>
+        <button onclick="this.parentElement.remove();" 
+                style="background: #6c757d; color: white; border: none; padding: 8px 15px; border-radius: 5px; margin: 10px 0 0 5px; cursor: pointer;">
+            閉じる
+        </button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // 10秒後に自動で非表示
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 10000);
+}
+
+// 重複提出の通知
+function showSubmissionAlreadyReceivedNotification(submissionData) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #fff3cd;
+        color: #856404;
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #ffeaa7;
+        z-index: 1000;
+        max-width: 400px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    `;
+    
+    notification.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 10px;">
+            ⚠️ 既に受信済みの提出です
+        </div>
+        <div>
+            <strong>学籍番号:</strong> ${submissionData.studentId}<br>
+            重複提出のため無視されました。
+        </div>
+        <button onclick="this.parentElement.remove();" 
+                style="background: #ffc107; color: #212529; border: none; padding: 8px 15px; border-radius: 5px; margin-top: 10px; cursor: pointer;">
+            閉じる
+        </button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+// 教員通知の確認
+function checkTeacherNotifications() {
+    const notifications = JSON.parse(localStorage.getItem('teacher_notifications') || '[]');
+    
+    if (notifications.length > 0) {
+        console.log('Found teacher notifications:', notifications.length);
+        
+        // 最新の通知を表示
+        const latestNotification = notifications[notifications.length - 1];
+        
+        if (latestNotification.type === 'new_submission') {
+            showNewSubmissionAlert(latestNotification);
+        }
+        
+        // 通知をクリア
+        localStorage.removeItem('teacher_notifications');
+    }
+}
+
+// 新提出アラート
+function showNewSubmissionAlert(notification) {
+    const alertDiv = document.createElement('div');
+    alertDiv.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 30px;
+        border-radius: 15px;
+        border: 2px solid #007aff;
+        z-index: 1001;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        text-align: center;
+        min-width: 300px;
+    `;
+    
+    alertDiv.innerHTML = `
+        <div style="font-size: 48px; margin-bottom: 20px;">📬</div>
+        <h3 style="color: #007aff; margin: 0 0 15px 0;">新しい提出があります！</h3>
+        <div style="margin: 20px 0;">
+            <strong>学籍番号:</strong> ${notification.studentId}<br>
+            <strong>テストコード:</strong> ${notification.testCode}<br>
+            <strong>時刻:</strong> ${new Date(notification.timestamp).toLocaleString('ja-JP')}
+        </div>
+        <button onclick="this.parentElement.remove(); adminLogin(); showScreen('admin');" 
+                style="background: #007aff; color: white; border: none; padding: 12px 25px; border-radius: 8px; margin: 10px; cursor: pointer; font-size: 16px;">
+            📊 管理画面で確認
+        </button>
+        <button onclick="this.parentElement.remove();" 
+                style="background: #6c757d; color: white; border: none; padding: 12px 25px; border-radius: 8px; margin: 10px; cursor: pointer; font-size: 16px;">
+            後で確認
+        </button>
+    `;
+    
+    document.body.appendChild(alertDiv);
+}
+
 // ========== 初期化処理 ==========
 
 // ページ読み込み完了時の初期化
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('Physics Quiz System initialized - Version 2.1');
+    
+    // URLパラメータから提出データや他の情報を処理
+    checkUrlParameters();
     
     // 管理画面の初期化
     setupDragAndDrop();
