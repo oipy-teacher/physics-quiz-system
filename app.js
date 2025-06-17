@@ -2743,6 +2743,54 @@ async function loadJSZip() {
 }
 
 // Firebase画像一括ダウンロード（教員専用）
+// CORS設定案内機能
+function showCorsInstructions() {
+    const instructions = `
+🚨 CORS設定が必要です！
+
+【現在の問題】
+Firebase StorageからのファイルダウンロードがCORSエラーでブロックされています。
+
+【解決手順】
+1. Google Cloud Shell にアクセス: https://console.cloud.google.com/cloudshell
+
+2. 以下のコマンドを順番に実行:
+
+gcloud config set project physics-quiz-app
+
+cat > cors.json << 'EOF'
+[
+  {
+    "origin": ["*"],
+    "method": ["GET", "HEAD"], 
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods"]
+  }
+]
+EOF
+
+gsutil cors set cors.json gs://physics-quiz-app.firebasestorage.app
+
+3. 設定確認:
+gsutil cors get gs://physics-quiz-app.firebasestorage.app
+
+【設定完了後】
+- 数分待ってからブラウザのキャッシュをクリア
+- 再度「手書き画像ダウンロード」を試してください
+
+このメッセージをコピーして手順に従ってください！
+    `;
+    
+    alert(instructions);
+    
+    // コンソールにも出力
+    console.log("=".repeat(50));
+    console.log("CORS設定手順:");
+    console.log("=".repeat(50));
+    console.log(instructions);
+    console.log("=".repeat(50));
+}
+
 async function downloadFirebaseImages() {
     if (!isFirebaseAvailable || !firebaseStorage) {
         showAdminError('Firebase Storageが利用できません。\n\n📋 設定手順:\n1. Firebase Consoleでプロジェクト作成\n2. Storage有効化\n3. app.jsのfirebaseConfig更新\n\n詳細: FIREBASE_SETUP.mdを参照');
