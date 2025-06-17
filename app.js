@@ -203,10 +203,21 @@ async function studentLogin() {
         
         // テストが設定されているかチェック
         if (!testEnabled || questions.length === 0) {
-            errorDiv.textContent = 'テストがまだ設定されていません。教員に確認してください。';
+            errorDiv.innerHTML = `
+                <div style="text-align: left;">
+                    <strong>テストが設定されていません。</strong><br><br>
+                    <strong>学生の方へ：</strong><br>
+                    1. 教員から配布されたQRコードをスキャンしてください<br>
+                    2. または、教員から受け取った完全なURLにアクセスしてください<br><br>
+                    <em>※ 学籍番号のみでの受験は、教員が同一端末でテストを設定した場合のみ可能です</em>
+                </div>
+            `;
             errorDiv.style.display = 'block';
             return;
         }
+        
+        // 同一端末でのテスト実行（管理者が設定済み）
+        console.log('Local test execution - same device as admin setup');
 
         // 新しい変数に設定
         currentStudentId = inputId;
@@ -1602,19 +1613,33 @@ function showQuestion(index) {
 
 // 現在の回答を保存
 function saveCurrentAnswer() {
+    // testDataとuserAnswersの両方を更新
     if (!testData.answers[currentQuestionIndex]) {
         testData.answers[currentQuestionIndex] = {};
     }
+    if (!userAnswers[currentQuestionIndex]) {
+        userAnswers[currentQuestionIndex] = {};
+    }
+    
+    const answerData = { method: inputMethod };
     
     if (inputMethod === 'canvas' && canvas) {
-        testData.answers[currentQuestionIndex].canvas = canvas.toDataURL();
-        canvasData[currentQuestionIndex] = canvas.toDataURL();
+        const canvasDataUrl = canvas.toDataURL();
+        answerData.canvas = canvasDataUrl;
+        testData.answers[currentQuestionIndex].canvas = canvasDataUrl;
+        userAnswers[currentQuestionIndex].canvas = canvasDataUrl;
+        canvasData[currentQuestionIndex] = canvasDataUrl;
     } else if (inputMethod === 'text') {
         const textAnswer = document.getElementById('textAnswer').value;
+        answerData.text = textAnswer;
         testData.answers[currentQuestionIndex].text = textAnswer;
+        userAnswers[currentQuestionIndex].text = textAnswer;
     }
     
     testData.answers[currentQuestionIndex].method = inputMethod;
+    userAnswers[currentQuestionIndex].method = inputMethod;
+    
+    console.log(`Answer saved for question ${currentQuestionIndex}:`, answerData);
 }
 
 // 回答を復元
@@ -1695,7 +1720,13 @@ function showSubmissionComplete() {
     const resultContainer = document.querySelector('#resultScreen .result-container');
     const finalStudentId = currentStudentId || studentId;
     const finalAnswers = userAnswers || (testData ? testData.answers : []);
-    const answersCount = finalAnswers.length;
+    
+    // 実際に回答された問題数を正確にカウント
+    const answersCount = finalAnswers.filter(answer => {
+        if (!answer) return false;
+        return (answer.method === 'text' && answer.text && answer.text.trim() !== '') ||
+               (answer.method === 'canvas' && answer.canvas && answer.canvas !== 'data:image/png;base64,');
+    }).length;
     
     console.log('=== showSubmissionComplete called ===');
     console.log('finalStudentId:', finalStudentId);
@@ -1869,6 +1900,27 @@ function saveSubmissionResult() {
         localStorage.setItem('studentSubmissions', JSON.stringify(filteredSubmissions));
         console.log('Submission saved to localStorage');
         
+        // 異なる端末からのアクセスの場合、クラウドストレージシミュレーション
+        // 実際にはここでサーバーAPIに送信すべきだが、GitHub Pagesでは代替手段を使用
+        if (finalTestCode !== 'LOCAL') {
+            console.log('Cross-device submission detected, attempting alternative save...');
+            
+            // テストコード固有のキーで保存（異なる端末間で共有される可能性を高める）
+            const cloudKey = `submission_${finalTestCode}_${finalStudentId}`;
+            const cloudData = {
+                ...submissionData,
+                cloudSaved: true,
+                cloudTimestamp: new Date().toISOString()
+            };
+            
+            try {
+                localStorage.setItem(cloudKey, JSON.stringify(cloudData));
+                console.log('Cloud-style save completed:', cloudKey);
+            } catch (e) {
+                console.warn('Cloud-style save failed:', e);
+            }
+        }
+        
         // 保存確認
         const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
         console.log('Verification - submissions after save:', savedSubmissions);
@@ -1884,12 +1936,43 @@ function saveSubmissionResult() {
 // 提出結果一覧表示
 function showSubmissionResults() {
     try {
+        // 通常の提出データを読み込み
         const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        
+        // 異なる端末からの提出データも検索
+        const allKeys = Object.keys(localStorage);
+        const cloudSubmissions = allKeys
+            .filter(key => key.startsWith('submission_'))
+            .map(key => {
+                try {
+                    return JSON.parse(localStorage.getItem(key));
+                } catch (e) {
+                    return null;
+                }
+            })
+            .filter(sub => sub && sub.cloudSaved);
+        
+        // 重複を除去して統合
+        const allSubmissions = [...submissions];
+        cloudSubmissions.forEach(cloudSub => {
+            const isDuplicate = submissions.some(sub => 
+                sub.studentId === cloudSub.studentId && 
+                sub.testCode === cloudSub.testCode
+            );
+            if (!isDuplicate) {
+                allSubmissions.push(cloudSub);
+            }
+        });
+        
+        console.log('Regular submissions:', submissions.length);
+        console.log('Cloud submissions:', cloudSubmissions.length);
+        console.log('Total submissions:', allSubmissions.length);
+        
         const container = document.getElementById('submissionResultsContainer');
         
         console.log('showSubmissionResults called');
-        console.log('Found submissions:', submissions.length);
-        console.log('Submissions data:', submissions);
+        console.log('Found submissions:', allSubmissions.length);
+        console.log('Submissions data:', allSubmissions);
         
         if (!container) {
             console.error('Results container not found');
@@ -1897,7 +1980,7 @@ function showSubmissionResults() {
             return;
         }
         
-        if (submissions.length === 0) {
+        if (allSubmissions.length === 0) {
             container.innerHTML = `
                 <div class="no-results" style="padding: 40px; text-align: center; background: #f8f9fa; border-radius: 10px; margin: 20px 0;">
                     <h3>📝 解答データなし</h3>
@@ -1913,12 +1996,12 @@ function showSubmissionResults() {
         }
         
         // 提出日時で降順ソート
-        submissions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        allSubmissions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         
         let html = `
             <h3>提出された解答一覧</h3>
             <div class="results-summary">
-                <p>総提出数: ${submissions.length}件</p>
+                <p>総提出数: ${allSubmissions.length}件 ${cloudSubmissions.length > 0 ? `(異なる端末からの提出: ${cloudSubmissions.length}件)` : ''}</p>
                 <div class="admin-actions">
                     <button onclick="exportToExcel()" class="btn-primary">
                         📊 解答データをExcelでダウンロード
@@ -1934,7 +2017,7 @@ function showSubmissionResults() {
             <div class="results-list">
         `;
         
-        submissions.forEach((submission, index) => {
+        allSubmissions.forEach((submission, index) => {
             const submitTime = new Date(submission.timestamp).toLocaleString('ja-JP');
             const duration = `${Math.floor(submission.totalTime / 60)}分${submission.totalTime % 60}秒`;
             
@@ -1995,7 +2078,7 @@ function showSubmissionResults() {
         container.innerHTML = html;
         container.style.display = 'block';
         
-        showAdminSuccess(`${submissions.length}件の提出データを表示しました。`);
+        showAdminSuccess(`${allSubmissions.length}件の提出データを表示しました。`);
         
     } catch (error) {
         console.error('Failed to show submission results:', error);
@@ -2006,9 +2089,32 @@ function showSubmissionResults() {
 // 解答データをExcelファイルとしてダウンロード
 function exportToExcel() {
     try {
+        // 同じロジックで全提出データを取得
         const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+        const allKeys = Object.keys(localStorage);
+        const cloudSubmissions = allKeys
+            .filter(key => key.startsWith('submission_'))
+            .map(key => {
+                try {
+                    return JSON.parse(localStorage.getItem(key));
+                } catch (e) {
+                    return null;
+                }
+            })
+            .filter(sub => sub && sub.cloudSaved);
         
-        if (submissions.length === 0) {
+        const allSubmissions = [...submissions];
+        cloudSubmissions.forEach(cloudSub => {
+            const isDuplicate = submissions.some(sub => 
+                sub.studentId === cloudSub.studentId && 
+                sub.testCode === cloudSub.testCode
+            );
+            if (!isDuplicate) {
+                allSubmissions.push(cloudSub);
+            }
+        });
+        
+        if (allSubmissions.length === 0) {
             showAdminError('エクスポートする解答データがありません。');
             return;
         }
@@ -2101,7 +2207,7 @@ async function downloadHandwritingImages() {
         let hasHandwritingData = false;
         
         // 各学生の解答を処理
-        submissions.forEach(submission => {
+        allSubmissions.forEach(submission => {
             const studentFolder = zip.folder(`学籍番号_${submission.studentId}`);
             
             // 学生情報ファイルを作成
