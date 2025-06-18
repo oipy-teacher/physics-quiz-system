@@ -870,8 +870,8 @@ async function generateShareUrl(data) {
         try {
             // 軽量版データのみ保存（巨大なencodedDataは除外）
             const lightweightData = {
-                testCode: testCode,
-                created: new Date().toISOString(),
+            testCode: testCode,
+            created: new Date().toISOString(),
                 cloudSaved: true,
                 questions: data.questions ? data.questions.length : 0,
                 hasAnswerExamples: data.answerExamples ? data.answerExamples.length > 0 : false,
@@ -2404,7 +2404,7 @@ async function uploadImagesToFirebase(studentId, testCode, answers) {
 }
 
 // 提出結果一覧表示
-function showSubmissionResults() {
+// [削除] showSubmissionResults - 採点システムに移動
     try {
         // テストコード毎の提出データを収集
         const allSubmissions = [];
@@ -2610,7 +2610,7 @@ function showSubmissionResults() {
 }
 
 // 解答データをExcelファイルとしてダウンロード
-function exportToExcel() {
+// [削除] exportToExcel - 採点システムに移動
     try {
         // 同じロジックで全提出データを取得
         const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
@@ -2712,7 +2712,7 @@ function exportToExcel() {
 }
 
 // 手書き画像をZIPファイルでダウンロード
-async function downloadHandwritingImages() {
+// [削除] downloadHandwritingImages - 採点システムに移動
     try {
         const submissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
         
@@ -2796,7 +2796,7 @@ ${submission.answers.map((answer, index) => {
 }
 
 // JSZipライブラリを動的ロード
-async function loadJSZip() {
+// [削除] loadJSZip - 採点システムに移動
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
@@ -2991,7 +2991,7 @@ async function selectTestCodeForDownload(testCode) {
                             if (xhr.status === 200) {
                                 console.log(`Successfully downloaded: ${fileRef.name} (${xhr.response.size} bytes)`);
                                 resolve(xhr.response);
-                            } else {
+                } else {
                                 reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
                             }
                         };
@@ -3221,7 +3221,7 @@ function emergencyCleanStorage() {
                     if (submissionDate < sevenDaysAgo) {
                         shouldDelete = true;
                     }
-                } else {
+        } else {
                     // タイムスタンプがないデータは削除
                     shouldDelete = true;
                 }
@@ -3233,9 +3233,9 @@ function emergencyCleanStorage() {
                 if (key.startsWith('testCode_') || key.startsWith('submissions_')) {
                     shouldDelete = true;
                 }
-            }
-            
-        } catch (error) {
+        }
+        
+    } catch (error) {
             // JSON解析エラー = 破損データなので削除
             shouldDelete = true;
             console.log(`Corrupted data detected: ${key}`);
