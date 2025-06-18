@@ -2545,8 +2545,16 @@ async function selectTestCodeForDownload(testCode) {
     try {
         showAdminSuccess(`${testCode} のデータをダウンロード中...`);
         
-        // JSZipライブラリを読み込み
-        await loadJSZip();
+        // JSZipライブラリを動的読み込み
+        if (typeof JSZip === 'undefined') {
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
         
         const zip = new JSZip();
         const testCodeFolder = zip.folder(testCode);
@@ -2652,8 +2660,8 @@ async function selectTestCodeForDownload(testCode) {
         
         if (processedFiles === 0) {
             showAdminError('ダウンロード可能なファイルがありませんでした。');
-        return;
-    }
+            return;
+        }
     
         // ZIPファイル生成・ダウンロード
         showAdminSuccess('ZIPファイルを生成中...');
