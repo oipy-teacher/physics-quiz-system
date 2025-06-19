@@ -230,14 +230,18 @@ async function testCodeLogin() {
         if (localData) {
             const parsedLocal = JSON.parse(localData);
             
-            if (parsedLocal.questions) {
+            if (parsedLocal.questions && parsedLocal.questions.length > 0) {
+                // 完全なテストデータがローカルにある場合
                 data = parsedLocal;
-                console.log('Data loaded from local storage:', data);
+                console.log('Complete test data loaded from local storage:', data);
             } else if (parsedLocal.dataUrl) {
-                // データURLがある場合は、そのURLにリダイレクト
-                errorDiv.textContent = 'テストページにリダイレクト中...';
+                // データURLがある場合は、そのURLにリダイレクト（推奨方法）
+                console.log('Redirecting to data URL for cross-device compatibility...');
+                errorDiv.textContent = 'クロスデバイス対応URLにリダイレクト中...';
                 window.location.href = parsedLocal.dataUrl;
                 return;
+            } else {
+                console.log('Local data exists but incomplete:', parsedLocal);
             }
         }
         
@@ -838,22 +842,36 @@ async function generateShareUrl(data) {
             console.warn('Data URL is too long, may cause issues with QR codes');
         }
         
-        // テストコードとデータの関連付けをローカルに保存（軽量版）
+        // テストコードとデータの関連付けをローカルに保存（完全データ版）
         try {
-            // 軽量版データのみ保存（巨大なencodedDataは除外）
-            const lightweightData = {
-            testCode: testCode,
-            created: new Date().toISOString(),
+            // 完全なデータを保存してフォールバック対応
+            const fullTestData = {
+                ...data,
+                testCode: testCode,
+                created: new Date().toISOString(),
                 cloudSaved: true,
-                questions: data.questions ? data.questions.length : 0,
-                hasAnswerExamples: data.answerExamples ? data.answerExamples.length > 0 : false,
-                lastUpdated: data.lastUpdated
+                dataUrl: dataUrl // 完全URLも保存
             };
-            localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightweightData));
-            console.log(`💾 Lightweight test code saved: ${testCode}`);
+            localStorage.setItem(`testCode_${testCode}`, JSON.stringify(fullTestData));
+            console.log(`💾 Complete test data saved: ${testCode}`);
         } catch (storageError) {
-            console.warn('Failed to save test code to localStorage:', storageError);
-            // 容量不足でも処理を続行
+            console.warn('Failed to save complete test data, saving lightweight version:', storageError);
+            // 容量不足の場合は軽量版
+            try {
+                const lightweightData = {
+                    testCode: testCode,
+                    created: new Date().toISOString(),
+                    cloudSaved: true,
+                    questions: data.questions ? data.questions.length : 0,
+                    hasAnswerExamples: data.answerExamples ? data.answerExamples.length > 0 : false,
+                    lastUpdated: data.lastUpdated,
+                    dataUrl: dataUrl // URLは保存しておく
+                };
+                localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightweightData));
+                console.log(`💾 Lightweight test code saved: ${testCode}`);
+            } catch (fallbackError) {
+                console.warn('Even lightweight save failed:', fallbackError);
+            }
         }
         
         return { testCode, cloudSaved: true, encodedData: encodedData, dataUrl: dataUrl };
@@ -1321,15 +1339,28 @@ function generateQRCode(testCode) {
             if (parsedData.dataUrl) {
                 // データ埋め込みURLを使用（最優先）
                 targetUrl = parsedData.dataUrl;
-                console.log('Using embedded data URL');
+                console.log('Using embedded data URL (recommended for cross-device)');
+            } else if (parsedData.questions && parsedData.questions.length > 0) {
+                // 完全データがある場合、その場でデータ埋め込みURLを生成
+                console.log('Generating new data URL from complete test data...');
+                const dataToEmbed = {
+                    questions: parsedData.questions,
+                    answerExamples: parsedData.answerExamples || [],
+                    testEnabled: true,
+                    testCode: testCode,
+                    created: parsedData.created
+                };
+                const encodedData = btoa(encodeURIComponent(JSON.stringify(dataToEmbed)));
+                targetUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
+                console.log('Generated data URL for cross-device compatibility');
             } else if (parsedData.encodedData) {
                 // エンコードされたデータからURLを再構築
                 targetUrl = `${window.location.origin}${window.location.pathname}?data=${parsedData.encodedData}`;
-                console.log('Using encoded data URL');
+                console.log('Using stored encoded data URL');
             } else {
-                // テストコード方式（フォールバック）
+                // テストコード方式（最後の手段）
                 targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
-                console.log('Using test code URL (fallback)');
+                console.log('Using test code URL (local device only - not recommended)');
             }
         } catch (e) {
             console.error('Error parsing test data:', e);
