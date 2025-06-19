@@ -80,19 +80,8 @@ function initFirebase() {
             // 🔥 Firestore データベースを初期化
             db = firebase.firestore();
             
-            // オフライン永続化を無効化（エラー回避）
-            try {
-                db.disableNetwork().then(() => {
-                    return db.enableNetwork();
-                }).then(() => {
-                    console.log('🔥 Firebase network enabled successfully');
-                }).catch((networkError) => {
-                    console.warn('Firebase network setup warning:', networkError);
-                    // ネットワークエラーでも継続
-                });
-            } catch (networkSetupError) {
-                console.warn('Firebase network setup failed:', networkSetupError);
-            }
+            // Firebaseネットワーク設定（シンプル化）
+            // disableNetwork/enableNetworkの繰り返しが400エラーの原因なので削除
             
             isFirebaseAvailable = true;
             console.log('🔥 Firebase & Firestore initialized successfully');
@@ -894,6 +883,23 @@ async function saveQuestions() {
     
     // QRコード生成オプションを表示
     showShareOptions(dataToSave, { testCode: testCode, cloudSaved: false });
+    
+    // テストコードの存在をFirebaseに登録（クロスデバイス対応の準備）
+    if (isFirebaseAvailable && db) {
+        console.log('📝 テストコード登録をFirebaseに保存中...');
+        db.collection('testCodes').doc(testCode).set({
+            exists: true,
+            created: new Date().toISOString(),
+            teacherId: dataToSave.teacherId,
+            questionCount: questions.length,
+            // データ本体は生徒初回アクセス時に保存
+            dataWillBeSavedOnFirstAccess: true
+        }).then(() => {
+            console.log('✅ テストコード登録完了:', testCode);
+        }).catch((error) => {
+            console.warn('テストコード登録失敗:', error);
+        });
+    }
     
     updateTestStatus();
 }
@@ -1823,7 +1829,8 @@ async function loadQuestionsFromUrl() {
                     
                     // エラーメッセージを表示
                     setTimeout(() => {
-                        if (window.confirm('このテストコードではアクセスできません。\n\n・テストコードが期限切れの可能性があります\n・教員から配布されたQRコードを再度スキャンしてください\n\n「OK」を押すと教員用URLに戻ります。')) {
+                        const message = `このテストコードではアクセスできません。\n\n考えられる原因：\n1. テストコードの入力間違い\n2. 教員がまだQRコードを生成していない\n3. ネットワーク接続の問題\n4. テストコードの有効期限切れ\n\n対処法：\n・教員から配布されたQRコードを再度スキャンしてください\n・テストコードを手入力した場合は、大文字で正確に入力してください\n\n「OK」を押すと教員用URLに戻ります。`;
+                        if (window.confirm(message)) {
                             window.location.href = window.location.origin + window.location.pathname;
                         }
                     }, 1000);
