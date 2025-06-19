@@ -833,26 +833,51 @@ async function generateShareUrl(data) {
             testCode: testCode
         });
         
-        // データを軽量化してからBase64エンコード
+        // データを軽量化してからBase64エンコード (画像が存在する場合のみ圧縮)
         const lightweightData = {
             questions: data.questions.map(q => ({
-                // 画像データを圧縮（Base64の冗長部分を削除）
-                imageData: q.imageData ? q.imageData.replace(/^data:image\/[^;]+;base64,/, '') : q.imageData,
-                number: q.number
+                // 画像データがある場合のみBase64ヘッダーを削除、ない場合はそのまま
+                imageData: q.imageData && q.imageData.includes('base64,') ? 
+                    q.imageData.replace(/^data:image\/[^;]+;base64,/, '') : q.imageData,
+                number: q.number,
+                // 他の必要なプロパティも含める
+                text: q.text,
+                options: q.options
             })),
             answerExamples: data.answerExamples ? data.answerExamples.map(ex => ({
-                imageData: ex.imageData ? ex.imageData.replace(/^data:image\/[^;]+;base64,/, '') : ex.imageData,
-                description: ex.description
+                imageData: ex.imageData && ex.imageData.includes('base64,') ? 
+                    ex.imageData.replace(/^data:image\/[^;]+;base64,/, '') : ex.imageData,
+                description: ex.description,
+                // 他の必要なプロパティも含める
+                title: ex.title
             })) : [],
             testEnabled: true,
             testCode: testCode,
             created: new Date().toISOString()
         };
         
+        // デバッグ情報を追加
+        console.log('軽量化前データサイズ:', JSON.stringify(data).length);
+        console.log('軽量化後データサイズ:', JSON.stringify(lightweightData).length);
+        console.log('画像データ確認:', {
+            questions: lightweightData.questions.map(q => ({
+                number: q.number,
+                hasImage: !!q.imageData,
+                imageSize: q.imageData ? q.imageData.length : 0
+            })),
+            answerExamples: lightweightData.answerExamples.map(ex => ({
+                description: ex.description,
+                hasImage: !!ex.imageData,
+                imageSize: ex.imageData ? ex.imageData.length : 0
+            }))
+        });
+        
         const encodedData = btoa(encodeURIComponent(JSON.stringify(lightweightData)));
         
         // QRコードとURLに埋め込むため、データサイズを確認
         const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
+        
+        console.log('エンコード後URLサイズ:', dataUrl.length);
         
         if (dataUrl.length > 2000) {
             // URLが長すぎる場合はQRコード用に警告（データは保存するが、QRはテストコード方式を推奨）
@@ -1378,12 +1403,17 @@ function generateQRCode(testCode) {
                 console.log('Checking if data can be embedded in QR...');
                 const lightweightData = {
                     questions: parsedData.questions.map(q => ({
-                        imageData: q.imageData ? q.imageData.replace(/^data:image\/[^;]+;base64,/, '') : q.imageData,
-                        number: q.number
+                        imageData: q.imageData && q.imageData.includes('base64,') ? 
+                            q.imageData.replace(/^data:image\/[^;]+;base64,/, '') : q.imageData,
+                        number: q.number,
+                        text: q.text,
+                        options: q.options
                     })),
                     answerExamples: (parsedData.answerExamples || []).map(ex => ({
-                        imageData: ex.imageData ? ex.imageData.replace(/^data:image\/[^;]+;base64,/, '') : ex.imageData,
-                        description: ex.description
+                        imageData: ex.imageData && ex.imageData.includes('base64,') ? 
+                            ex.imageData.replace(/^data:image\/[^;]+;base64,/, '') : ex.imageData,
+                        description: ex.description,
+                        title: ex.title
                     })),
                     testEnabled: true,
                     testCode: testCode,
