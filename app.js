@@ -2041,21 +2041,61 @@ function generateAnswerExamplesDisplay() {
     const currentAnswerExamples = currentTestData ? currentTestData.answerExamples : answerExamples;
     const currentQuestions = currentTestData ? currentTestData.questions : questions;
     
+    console.log('=== 解答例表示デバッグ ===');
+    console.log('currentTestData:', currentTestData);
+    console.log('answerExamples (global):', answerExamples);
+    console.log('currentAnswerExamples:', currentAnswerExamples);
+    console.log('currentQuestions:', currentQuestions);
+    
+    // 解答例がない場合の詳細チェック
     if (!currentAnswerExamples || currentAnswerExamples.length === 0) {
+        console.log('解答例が見つかりません');
+        
+        // LocalStorageから直接解答例を確認
+        const savedAnswerExamples = localStorage.getItem('physicsQuizAnswerExamples');
+        console.log('LocalStorage解答例:', savedAnswerExamples);
+        
+        if (savedAnswerExamples) {
+            try {
+                const parsedExamples = JSON.parse(savedAnswerExamples);
+                console.log('解析済み解答例:', parsedExamples);
+                if (parsedExamples && parsedExamples.length > 0) {
+                    // LocalStorageから直接取得した解答例を使用
+                    return generateExamplesFromData(parsedExamples, currentQuestions);
+                }
+            } catch (e) {
+                console.error('解答例データの解析エラー:', e);
+            }
+        }
+        
         return ''; // 解答例がない場合は何も表示しない
     }
     
-    console.log('解答例データ:', currentAnswerExamples);
-    console.log('問題データ:', currentQuestions);
+    return generateExamplesFromData(currentAnswerExamples, currentQuestions);
+}
+
+// 解答例データから表示HTMLを生成
+function generateExamplesFromData(answerExamplesData, questionsData) {
+    console.log('=== 解答例HTML生成 ===');
+    console.log('answerExamplesData:', answerExamplesData);
+    console.log('questionsData:', questionsData);
     
     let examplesHtml = '';
     
     // 問題ごとに解答例を表示
-    currentQuestions.forEach((question, questionIndex) => {
-        // この問題に対応する解答例を探す
-        const relatedExamples = currentAnswerExamples.filter(example => 
+    questionsData.forEach((question, questionIndex) => {
+        // この問題に対応する解答例を探す（複数の方法で検索）
+        let relatedExamples = answerExamplesData.filter(example => 
             example.questionIndex === questionIndex
         );
+        
+        // questionIndexが一致しない場合、順番で対応させる
+        if (relatedExamples.length === 0 && answerExamplesData.length > questionIndex) {
+            relatedExamples = [answerExamplesData[questionIndex]];
+            console.log(`問題${questionIndex + 1}: questionIndexで見つからないため、順番で対応`);
+        }
+        
+        console.log(`問題${questionIndex + 1}の解答例:`, relatedExamples);
         
         if (relatedExamples.length > 0) {
             examplesHtml += `
@@ -2068,7 +2108,8 @@ function generateAnswerExamplesDisplay() {
                                     <h4 style="color: #666; margin-bottom: 10px;">解答例 ${exampleIndex + 1}</h4>
                                     <img src="${example.image}" 
                                          style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" 
-                                         alt="問題${questionIndex + 1}の解答例${exampleIndex + 1}">
+                                         alt="問題${questionIndex + 1}の解答例${exampleIndex + 1}"
+                                         onerror="console.error('解答例画像の読み込みエラー:', this.src)">
                                 </div>
                             `).join('')}
                         </div>
@@ -2077,6 +2118,29 @@ function generateAnswerExamplesDisplay() {
             `;
         }
     });
+    
+    // 解答例が問題と対応しない場合、全ての解答例を表示
+    if (!examplesHtml && answerExamplesData.length > 0) {
+        console.log('問題との対応が取れないため、全解答例を表示');
+        examplesHtml = `
+            <div style="margin: 30px 0; text-align: left;">
+                <h3 style="color: #007aff; margin-bottom: 15px;">📖 解答例</h3>
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border: 2px solid #e9ecef;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                        ${answerExamplesData.map((example, index) => `
+                            <div style="text-align: center;">
+                                <h4 style="color: #666; margin-bottom: 10px;">解答例 ${index + 1}</h4>
+                                <img src="${example.image}" 
+                                     style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" 
+                                     alt="解答例${index + 1}"
+                                     onerror="console.error('解答例画像の読み込みエラー:', this.src)">
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
     
     if (examplesHtml) {
         return `
@@ -2090,6 +2154,7 @@ function generateAnswerExamplesDisplay() {
         `;
     }
     
+    console.log('解答例HTMLが生成されませんでした');
     return '';
 }
 
