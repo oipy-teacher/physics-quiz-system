@@ -72,16 +72,9 @@ function initFirebase() {
             // 🔥 Firestore データベースを初期化
             db = firebase.firestore();
             
-            // Firebase設定をテスト
-            db.enableNetwork().then(() => {
-                isFirebaseAvailable = true;
-                console.log('🔥 Firebase & Firestore initialized successfully');
-            }).catch((error) => {
-                console.warn('Firebase network connection failed:', error);
-                console.log('⚠️ Firebase接続エラーのため、ローカル動作モードに切り替えます');
-                isFirebaseAvailable = false;
-                db = null;
-            });
+            // Firebase設定をテスト（簡素化）
+            isFirebaseAvailable = true;
+            console.log('🔥 Firebase & Firestore initialized successfully');
         } else {
             console.warn('Firebase SDK not loaded');
             isFirebaseAvailable = false;
@@ -1613,7 +1606,7 @@ async function loadSavedQuestions() {
         console.log('🔥 Firebase優先でデータ読み込み開始...');
         
         // 1. URLパラメータからデータを読み込み
-        const urlLoaded = loadQuestionsFromUrl();
+        const urlLoaded = await loadQuestionsFromUrl();
         
         if (!urlLoaded) {
             // 2. URLデータがない場合はFirebaseから読み込み
@@ -1708,7 +1701,7 @@ async function loadQuestionsFromFirebase() {
 }
 
 // URLパラメータからデータを読み込み（真のクロスデバイス対応）
-function loadQuestionsFromUrl() {
+async function loadQuestionsFromUrl() {
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const testCode = urlParams.get('code');
@@ -1731,24 +1724,60 @@ function loadQuestionsFromUrl() {
                 console.error('Failed to decode URL data:', decodeError);
             }
         } else if (testCode) {
-            // フォールバック：テストコード（ローカルストレージ依存）
+            // テストコード：まずFirebaseから読み込み、次にローカルストレージ
             console.log('Attempting to load test code:', testCode);
-            const testKey = `testCode_${testCode}`;
-            const testData = localStorage.getItem(testKey);
-            if (testData) {
-                data = JSON.parse(testData);
-                console.log('Data loaded from localStorage (same device):', data);
-            } else {
-                // ローカルストレージにデータがない場合（クロスデバイスアクセス）
-                console.warn('Test code not found in localStorage - cross-device access detected');
-                
-                // 代替案：学生にQRコードの再スキャンを促す
-                setTimeout(() => {
-                    if (window.confirm('このテストコードではアクセスできません。\n\n教員から配布されたQRコードを再度スキャンしてアクセスしてください。\n\n「OK」を押すと教員用URLに戻ります。')) {
-                        window.location.href = window.location.origin + window.location.pathname;
+            
+            // まずFirebaseから試す（クロスデバイス対応）
+            // Firebase初期化を待つ
+            if (!db) {
+                console.log('🔥 Firebase初期化待ち（URL）...');
+                // 最大3秒待機
+                for (let i = 0; i < 30; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    if (db) {
+                        console.log('✅ Firebase初期化完了（URL）');
+                        break;
                     }
-                }, 1000);
-                return false;
+                }
+            }
+            
+            if (isFirebaseAvailable && db) {
+                try {
+                    console.log('🔥 Firebaseからテストコードを読み込み中:', testCode);
+                    const doc = await db.collection('testCodes').doc(testCode).get();
+                    if (doc.exists) {
+                        data = doc.data();
+                        console.log('✅ Firebase からテストコードを読み込み成功:', testCode);
+                        
+                        // アクティブテストコードとして設定
+                        localStorage.setItem('physicsQuizActiveTestCode', testCode);
+                    } else {
+                        console.log('Firebase にテストコードが見つかりません:', testCode);
+                    }
+                } catch (error) {
+                    console.warn('Firebase読み込みエラー:', error);
+                }
+            }
+            
+            // Firebaseで見つからない場合はローカルストレージを確認
+            if (!data) {
+                const testKey = `testCode_${testCode}`;
+                const testData = localStorage.getItem(testKey);
+                if (testData) {
+                    data = JSON.parse(testData);
+                    console.log('Data loaded from localStorage (same device):', data);
+                } else {
+                    // ローカルストレージにもない場合
+                    console.warn('Test code not found in both Firebase and localStorage:', testCode);
+                    
+                    // エラーメッセージを表示
+                    setTimeout(() => {
+                        if (window.confirm('このテストコードではアクセスできません。\n\n・テストコードが期限切れの可能性があります\n・教員から配布されたQRコードを再度スキャンしてください\n\n「OK」を押すと教員用URLに戻ります。')) {
+                            window.location.href = window.location.origin + window.location.pathname;
+                        }
+                    }, 1000);
+                    return false;
+                }
             }
         } else if (shareId) {
             // 旧形式：短縮ID
