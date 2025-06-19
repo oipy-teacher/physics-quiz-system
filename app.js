@@ -3258,11 +3258,15 @@ function getCurrentTestCode() {
 }
 
 function emergencyCleanStorage() {
-    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000); // 1日前に変更（複数人受験対応）
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7日前に変更（アクティブテスト保護）
     let deletedCount = 0;
     let deletedSizeMB = 0;
     
-    console.log('🚨 緊急ストレージクリーニング開始 (1日以上古いデータのみ)...');
+    console.log('🚨 緊急ストレージクリーニング開始 (アクティブテストコード保護モード)...');
+    
+    // アクティブなテストコードを取得（保護対象）
+    const activeTestCode = localStorage.getItem('physicsQuizActiveTestCode');
+    console.log(`🛡️ アクティブテストコード保護: ${activeTestCode}`);
     
     // 安全にキー一覧を取得
     const keys = [];
@@ -3284,32 +3288,43 @@ function emergencyCleanStorage() {
             const itemSize = item.length;
             let shouldDelete = false;
             
-            // 古いテストコードを削除
+            // テストコードの削除判定（アクティブテスト保護）
             if (key.startsWith('testCode_')) {
+                const testCode = key.replace('testCode_', '');
+                
+                // アクティブなテストコードは絶対に削除しない
+                if (activeTestCode && testCode === activeTestCode) {
+                    console.log(`🛡️ アクティブテストコード保護: ${testCode} (削除スキップ)`);
+                    return; // 削除しない
+                }
+                
                 try {
                     const data = JSON.parse(item);
-                const lastUpdated = new Date(data.lastUpdated || 0);
-                
-                    if (lastUpdated < oneDayAgo) {
+                    const lastUpdated = new Date(data.lastUpdated || data.created || 0);
+                    
+                    // 7日以上古いテストコードのみ削除
+                    if (lastUpdated < sevenDaysAgo) {
                         shouldDelete = true;
+                        console.log(`🗑️ 古いテストコード削除予定: ${testCode} (${lastUpdated.toLocaleDateString()})`);
                     }
                 } catch (error) {
-                    // JSON解析エラー = 破損データなので削除
+                    // JSON解析エラー = 破損データなので削除（アクティブでない場合のみ）
                     shouldDelete = true;
+                    console.log(`🗑️ 破損テストコード削除予定: ${testCode}`);
                 }
             }
             
-            // 古い学生データを削除
+            // 古い学生データを削除（7日以上前のもののみ）
             if (key.startsWith('submissions_') || key.startsWith('answers_')) {
                 try {
                     const data = JSON.parse(item);
-                if (data.timestamp) {
-                    const submissionDate = new Date(data.timestamp);
-                        if (submissionDate < oneDayAgo) {
-                        shouldDelete = true;
-                    }
-        } else {
-                    // タイムスタンプがないデータは削除
+                    if (data.timestamp) {
+                        const submissionDate = new Date(data.timestamp);
+                        if (submissionDate < sevenDaysAgo) {
+                            shouldDelete = true;
+                        }
+                    } else {
+                        // タイムスタンプがないデータは削除
                         shouldDelete = true;
                     }
                 } catch (error) {
@@ -3347,7 +3362,7 @@ function emergencyCleanStorage() {
     const newUsedMB = (newUsed / (1024 * 1024)).toFixed(2);
     const freedMB = deletedSizeMB.toFixed(2);
     
-    showAdminSuccess(`🚨 緊急ストレージクリーニング完了\n\n📊 削除項目: ${deletedCount}件 (1日以上古いデータのみ)\n💾 解放容量: ${freedMB}MB\n📊 現在使用量: ${newUsedMB}MB\n\n✅ アクティブなテストデータは保護されました`);
+    showAdminSuccess(`🚨 緊急ストレージクリーニング完了\n\n📊 削除項目: ${deletedCount}件 (7日以上古いデータのみ)\n💾 解放容量: ${freedMB}MB\n📊 現在使用量: ${newUsedMB}MB\n🛡️ アクティブテストコード: ${activeTestCode || '未設定'}\n\n✅ アクティブなテストデータは保護されました`);
     
     // ページリロードで反映
     setTimeout(() => {
