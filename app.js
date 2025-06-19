@@ -833,25 +833,9 @@ async function generateShareUrl(data) {
             testCode: testCode
         });
         
-        // データを軽量化してからBase64エンコード (画像が存在する場合のみ圧縮)
+        // 軽量化を一時無効化（デバッグのため）
         const lightweightData = {
-            questions: data.questions.map(q => ({
-                // 画像データがある場合のみBase64ヘッダーを削除、ない場合はそのまま
-                imageData: q.imageData && q.imageData.includes('base64,') ? 
-                    q.imageData.replace(/^data:image\/[^;]+;base64,/, '') : q.imageData,
-                number: q.number,
-                // 他の必要なプロパティも含める
-                text: q.text,
-                options: q.options
-            })),
-            answerExamples: data.answerExamples ? data.answerExamples.map(ex => ({
-                imageData: ex.imageData && ex.imageData.includes('base64,') ? 
-                    ex.imageData.replace(/^data:image\/[^;]+;base64,/, '') : ex.imageData,
-                description: ex.description,
-                // 他の必要なプロパティも含める
-                title: ex.title
-            })) : [],
-            testEnabled: true,
+            ...data,
             testCode: testCode,
             created: new Date().toISOString()
         };
@@ -1402,20 +1386,7 @@ function generateQRCode(testCode) {
                 // 完全データがある場合でも軽量版を試行
                 console.log('Checking if data can be embedded in QR...');
                 const lightweightData = {
-                    questions: parsedData.questions.map(q => ({
-                        imageData: q.imageData && q.imageData.includes('base64,') ? 
-                            q.imageData.replace(/^data:image\/[^;]+;base64,/, '') : q.imageData,
-                        number: q.number,
-                        text: q.text,
-                        options: q.options
-                    })),
-                    answerExamples: (parsedData.answerExamples || []).map(ex => ({
-                        imageData: ex.imageData && ex.imageData.includes('base64,') ? 
-                            ex.imageData.replace(/^data:image\/[^;]+;base64,/, '') : ex.imageData,
-                        description: ex.description,
-                        title: ex.title
-                    })),
-                    testEnabled: true,
+                    ...parsedData,
                     testCode: testCode,
                     created: parsedData.created
                 };
@@ -1656,21 +1627,8 @@ function loadQuestionsFromUrl() {
                 const decodedData = decodeURIComponent(atob(dataParam));
                 data = JSON.parse(decodedData);
                 
-                // 軽量化されたデータを復元
-                if (data.questions) {
-                    data.questions = data.questions.map(q => ({
-                        ...q,
-                        // Base64ヘッダーを復元
-                        imageData: q.imageData ? `data:image/jpeg;base64,${q.imageData}` : q.imageData
-                    }));
-                }
-                if (data.answerExamples) {
-                    data.answerExamples = data.answerExamples.map(ex => ({
-                        ...ex,
-                        // Base64ヘッダーを復元
-                        imageData: ex.imageData ? `data:image/jpeg;base64,${ex.imageData}` : ex.imageData
-                    }));
-                }
+                // 軽量化無効化のため復元処理をスキップ
+                console.log('データ復元処理をスキップ（軽量化無効化のため）');
                 
                 console.log('Data loaded from URL parameter (cross-device):', data);
             } catch (decodeError) {
