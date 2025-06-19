@@ -681,15 +681,15 @@ function removeQuestion(index) {
 
 // 問題設定保存
 async function saveQuestions() {
-    // 🧹 保存前に古いテストデータを自動クリア（一回限りのテスト用）
-    clearOldTestDataAutomatically();
+    // 🧹 自動クリーニング機能を無効化（同一端末での複数人テスト対応）
+    // clearOldTestDataAutomatically();
     
     // 容量チェック（念のため）
     if (!checkStorageQuota()) {
         showAdminError('❌ 容量不足により保存できません。');
         return;
     }
-    
+
     if (questions.length === 0) {
         showAdminError('問題が設定されていません。');
         return;
@@ -2492,9 +2492,9 @@ async function showTestCodeSelectionModal(testCodeRefs) {
                     <button onclick="closeTestCodeSelectionModal()" style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px;">
                         キャンセル
                     </button>
-                            </div>
-                            </div>
-                        </div>
+                    </div>
+                    </div>
+                    </div>
     `;
     
     document.body.insertAdjacentHTML('beforeend', modalHtml);
@@ -2837,8 +2837,8 @@ function emergencyCleanStorage() {
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('Physics Quiz System initialized - Version 2.2 (Auto-cleanup)');
     
-    // 🧹 起動時に自動クリーニング実行（一回限りテスト用）
-    clearOldTestDataAutomatically();
+    // 🧹 自動クリーニング機能を無効化（同一端末での複数人テスト対応）
+    // clearOldTestDataAutomatically();
     
     // 管理画面の初期化
     setupDragAndDrop();
