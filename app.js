@@ -839,9 +839,9 @@ async function generateShareUrl(data) {
         // QRコードとURLに埋め込むため、データサイズを確認
         const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
         
-        if (dataUrl.length > 1500) {
+        if (dataUrl.length > 2000) {
             // URLが長すぎる場合はQRコード用に警告（データは保存するが、QRはテストコード方式を推奨）
-            console.warn(`Data URL is too long for QR codes (${dataUrl.length} chars), QR will use test code method`);
+            console.warn(`Data URL may be too long for some QR codes (${dataUrl.length} chars), consider reducing image size`);
         }
         
                 // テストコードとデータの関連付けをローカルに保存（効率的管理版）
@@ -1353,16 +1353,11 @@ function generateQRCode(testCode) {
             const parsedData = JSON.parse(testData);
             console.log('Parsed test data keys:', Object.keys(parsedData));
             
-            // まず軽量なテストコード方式を優先（QRコード制限対策）
-            targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
-            urlType = 'code';
-            console.log('Using test code URL (QR-friendly)');
-            
-            // データURLがある場合でもサイズをチェック
-            if (parsedData.dataUrl && parsedData.dataUrl.length < 1500) {
+            // データ埋め込み方式を優先（クロスデバイス対応のため）
+            if (parsedData.dataUrl && parsedData.dataUrl.length < 2000) {
                 targetUrl = parsedData.dataUrl;
                 urlType = 'data';
-                console.log('Using embedded data URL (short enough for QR)');
+                console.log('Using embedded data URL (cross-device compatible)');
             } else if (parsedData.questions && parsedData.questions.length > 0) {
                 // 完全データがある場合でも軽量版を試行
                 console.log('Checking if data can be embedded in QR...');
@@ -1376,15 +1371,23 @@ function generateQRCode(testCode) {
                 const encodedData = btoa(encodeURIComponent(JSON.stringify(dataToEmbed)));
                 const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
                 
-                if (dataUrl.length < 1500) {
+                if (dataUrl.length < 2000) {
                     targetUrl = dataUrl;
                     urlType = 'data';
-                    console.log('Generated short data URL for QR compatibility');
+                    console.log('Generated data URL for cross-device compatibility');
                 } else {
-                    console.warn(`Data URL too long (${dataUrl.length} chars), using test code method`);
-                }
-            }
-        } catch (e) {
+                    console.warn(`Data URL too long (${dataUrl.length} chars), falling back to test code method`);
+                                         // テストコード方式にフォールバック
+                     targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+                     urlType = 'code';
+                 }
+             } else {
+                 // 他にデータが利用できない場合のみテストコード方式
+                 targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+                 urlType = 'code';
+                 console.log('Using test code URL as fallback');
+             }
+         } catch (e) {
             console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
             targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
@@ -1607,11 +1610,23 @@ function loadQuestionsFromUrl() {
             }
         } else if (testCode) {
             // フォールバック：テストコード（ローカルストレージ依存）
+            console.log('Attempting to load test code:', testCode);
             const testKey = `testCode_${testCode}`;
             const testData = localStorage.getItem(testKey);
             if (testData) {
                 data = JSON.parse(testData);
                 console.log('Data loaded from localStorage (same device):', data);
+            } else {
+                // ローカルストレージにデータがない場合（クロスデバイスアクセス）
+                console.warn('Test code not found in localStorage - cross-device access detected');
+                
+                // 代替案：学生にQRコードの再スキャンを促す
+                setTimeout(() => {
+                    if (window.confirm('このテストコードではアクセスできません。\n\n教員から配布されたQRコードを再度スキャンしてアクセスしてください。\n\n「OK」を押すと教員用URLに戻ります。')) {
+                        window.location.href = window.location.origin + window.location.pathname;
+                    }
+                }, 1000);
+                return false;
             }
         } else if (shareId) {
             // 旧形式：短縮ID
