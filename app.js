@@ -40,14 +40,14 @@ let gradingResults = [];
 // 管理者パスワード（実際の運用では環境変数やサーバー側で管理）
 const ADMIN_PASSWORD = 'physics2024';
 
-// Firebase設定（実際のプロジェクト設定に置き換えてください）
+// Firebase設定（無効化 - 正しいプロジェクト設定が必要）
 const firebaseConfig = {
-    apiKey: "AIzaSy5Hw_vhizEaXgoWQNlgVM0uAudPjsoPo",
-    authDomain: "physics-quiz-app.firebaseapp.com",
-    projectId: "physics-quiz-app",
-    storageBucket: "physics-quiz-app.firebasestorage.app",
-    messagingSenderId: "96107265429",
-    appId: "1:96107265429:web:dbaa46b9d23629cbc18dc6"
+    apiKey: "",  // 無効化：正しいFirebase設定が必要
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
 };
 
 // Firebase初期化
@@ -810,37 +810,50 @@ async function saveQuestions() {
     }
     
     if (!db) {
-        showAdminError('Firebase接続が必要です。ネットワーク接続を確認してください。');
-        return;
+        console.log('⚠️ Firebase未設定のため、ローカル動作モードで継続します');
+        // Firebase未設定でもローカル動作を継続
     }
 
-    try {
-        console.log('🔥 Firebase完全版で保存開始...');
-        
-        // データを準備
-        const dataToSave = {
-            questions: questions,
-            answerExamples: answerExamples,
-            testEnabled: true,
-            lastUpdated: new Date().toISOString(),
-            teacherId: Date.now() // 教員セッションID
-        };
+    // データを準備
+    const dataToSave = {
+        questions: questions,
+        answerExamples: answerExamples,
+        testEnabled: true,
+        lastUpdated: new Date().toISOString(),
+        teacherId: Date.now() // 教員セッションID
+    };
 
-        // 【Firebase完全保存】テストコード生成とFirebase保存
-        const testCode = generateShortId();
-        console.log(`🔥 生成されたテストコード: ${testCode}`);
-        
-        // Firebaseに完全データを保存
-        await db.collection('testCodes').doc(testCode).set({
-            ...dataToSave,
-            testCode: testCode,
-            created: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30日後に期限切れ
-        });
-        
-        console.log(`✅ Firebase保存成功: ${testCode}`);
-        
-        // ローカルには軽量メタデータのみキャッシュ
+    // テストコード生成
+    const testCode = generateShortId();
+    console.log(`🔥 生成されたテストコード: ${testCode}`);
+    
+    let cloudSaved = false;
+    
+    // Firebase保存を試行（未設定の場合はスキップ）
+    if (db) {
+        try {
+            console.log('🔥 Firebase保存を試行中...');
+            await db.collection('testCodes').doc(testCode).set({
+                ...dataToSave,
+                testCode: testCode,
+                created: new Date().toISOString(),
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30日後に期限切れ
+            });
+            
+            console.log(`✅ Firebase保存成功: ${testCode}`);
+            cloudSaved = true;
+        } catch (error) {
+            console.warn('⚠️ Firebase保存に失敗、ローカル動作します:', error);
+            cloudSaved = false;
+        }
+    } else {
+        console.log('🔧 Firebase未設定、ローカル動作モードです');
+        cloudSaved = false;
+    }
+    
+    // ローカルストレージに保存（Firebase失敗時は完全データ、成功時は軽量データ）
+    if (cloudSaved) {
+        // Firebase保存成功時：軽量メタデータのみ
         const lightCache = {
             testCode: testCode,
             created: new Date().toISOString(),
@@ -849,23 +862,32 @@ async function saveQuestions() {
             answerExamplesCount: answerExamples.length,
             lastUpdated: dataToSave.lastUpdated
         };
-        
-        localStorage.setItem('physicsQuizEnabled', 'true');
-        localStorage.setItem('physicsQuizActiveTestCode', testCode);
         localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightCache));
-        
-        testEnabled = true;
-        
-        showAdminSuccess(`✅ Firebase保存完了！テストコード: ${testCode}`);
-        
-        // QRコード生成オプションを表示
-        showShareOptions(dataToSave, { testCode: testCode, cloudSaved: true });
-        
-        updateTestStatus();
-    } catch (error) {
-        console.error('Firebase保存エラー:', error);
-        showAdminError('Firebase保存に失敗しました。ネットワーク接続を確認してください。');
+    } else {
+        // Firebase保存失敗時：完全データをローカルに保存
+        localStorage.setItem(`testCode_${testCode}`, JSON.stringify({
+            ...dataToSave,
+            testCode: testCode,
+            created: new Date().toISOString(),
+            cloudSaved: false
+        }));
     }
+    
+    localStorage.setItem('physicsQuizEnabled', 'true');
+    localStorage.setItem('physicsQuizActiveTestCode', testCode);
+    testEnabled = true;
+    
+    // 成功メッセージ表示
+    if (cloudSaved) {
+        showAdminSuccess(`✅ Firebase保存完了！テストコード: ${testCode}`);
+    } else {
+        showAdminSuccess(`✅ ローカル保存完了！テストコード: ${testCode}\n📱 QRコードで配信可能です\n⚠️ クロスデバイス対応にはFirebase設定が必要`);
+    }
+    
+    // QRコード生成オプションを表示
+    showShareOptions(dataToSave, { testCode: testCode, cloudSaved: cloudSaved });
+    
+    updateTestStatus();
 }
 
 // Firebase完全版では不要（削除済み）
@@ -1408,7 +1430,7 @@ function generateQRCode(testCode) {
             console.log('Parsed test data keys:', Object.keys(parsedData));
             
             // 【シンプル方式】テストコード方式を優先（短URL）
-            targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+                targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
             urlType = 'code';
             console.log('Using test code URL (short and clean)');
             
@@ -1416,7 +1438,7 @@ function generateQRCode(testCode) {
             if (parsedData.questions && parsedData.questions.length > 0) {
                 saveTestDataToFirebase(testCode, parsedData);
             }
-         } catch (e) {
+        } catch (e) {
             console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
             targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
@@ -3127,7 +3149,7 @@ function checkStorageQuota() {
             return false; // クリーニング後は再チェックが必要
         } else if (used > 5 * 1024 * 1024) { // 5MB以上で警告
             if (shouldLog) {
-                console.warn(`⚠️ Storage使用量注意: ${usedMB}MB`);
+            console.warn(`⚠️ Storage使用量注意: ${usedMB}MB`);
             }
         }
         return true;
@@ -3155,7 +3177,7 @@ function clearOldTestDataAutomatically() {
                     const parsedData = JSON.parse(data);
                     const created = new Date(parsedData.created || parsedData.lastUpdated || 0);
                     if (created < threeDaysAgo) {
-                        keysToDelete.push(key);
+            keysToDelete.push(key);
                         console.log(`Marking old test code for deletion: ${key} (${created.toLocaleDateString()})`);
                     }
                 }
@@ -3168,14 +3190,14 @@ function clearOldTestDataAutomatically() {
                     const parsedData = JSON.parse(data);
                     const timestamp = new Date(parsedData.timestamp || parsedData.created || 0);
                     if (timestamp < threeDaysAgo) {
-                        keysToDelete.push(key);
-                    }
+            keysToDelete.push(key);
+        }
                 }
             }
         } catch (error) {
             // 破損データのみ削除
             if (key.startsWith('testCode_') || key.startsWith('submissions_') || key.startsWith('answers_')) {
-                keysToDelete.push(key);
+            keysToDelete.push(key);
                 console.log(`Marking corrupted data for deletion: ${key}`);
             }
         }
@@ -3184,9 +3206,9 @@ function clearOldTestDataAutomatically() {
     // 削除実行
     keysToDelete.forEach(key => {
         try {
-            localStorage.removeItem(key);
-            deletedCount++;
-            console.log(`🗑️ Auto-deleted: ${key}`);
+        localStorage.removeItem(key);
+        deletedCount++;
+        console.log(`🗑️ Auto-deleted: ${key}`);
         } catch (error) {
             console.error(`Failed to delete ${key}:`, error);
         }
@@ -3203,7 +3225,7 @@ function clearOldTestDataAutomatically() {
 // 現在のテストコードを取得
 function getCurrentTestCode() {
     try {
-        // 最新のテストコードを取得
+    // 最新のテストコードを取得
         const testCodes = [];
         
         for (let i = 0; i < localStorage.length; i++) {
@@ -3214,7 +3236,7 @@ function getCurrentTestCode() {
                     if (data) {
                         const parsedData = JSON.parse(data);
                         testCodes.push({
-                            code: key.replace('testCode_', ''),
+                    code: key.replace('testCode_', ''),
                             created: new Date(parsedData.created || parsedData.lastUpdated || 0)
                         });
                     }
@@ -3227,8 +3249,8 @@ function getCurrentTestCode() {
         
         // 日付順でソート（新しい順）
         testCodes.sort((a, b) => b.created - a.created);
-        
-        return testCodes.length > 0 ? testCodes[0].code : null;
+    
+    return testCodes.length > 0 ? testCodes[0].code : null;
     } catch (error) {
         console.error('Error getting current test code:', error);
         return null;
@@ -3266,8 +3288,8 @@ function emergencyCleanStorage() {
             if (key.startsWith('testCode_')) {
                 try {
                     const data = JSON.parse(item);
-                    const lastUpdated = new Date(data.lastUpdated || 0);
-                    
+                const lastUpdated = new Date(data.lastUpdated || 0);
+                
                     if (lastUpdated < oneDayAgo) {
                         shouldDelete = true;
                     }
@@ -3281,13 +3303,13 @@ function emergencyCleanStorage() {
             if (key.startsWith('submissions_') || key.startsWith('answers_')) {
                 try {
                     const data = JSON.parse(item);
-                    if (data.timestamp) {
-                        const submissionDate = new Date(data.timestamp);
+                if (data.timestamp) {
+                    const submissionDate = new Date(data.timestamp);
                         if (submissionDate < oneDayAgo) {
-                            shouldDelete = true;
-                        }
-                    } else {
-                        // タイムスタンプがないデータは削除
+                        shouldDelete = true;
+                    }
+        } else {
+                    // タイムスタンプがないデータは削除
                         shouldDelete = true;
                     }
                 } catch (error) {
@@ -3302,19 +3324,19 @@ function emergencyCleanStorage() {
                 if (key.startsWith('testCode_') || key.startsWith('submissions_')) {
                     shouldDelete = true;
                 }
-            }
-            
+        }
+        
             // ログ管理用の一時データ
             if (key === 'lastStorageLog') {
                 // このキーは残す
                 return;
-            }
-            
-            if (shouldDelete) {
-                localStorage.removeItem(key);
-                deletedCount++;
-                deletedSizeMB += itemSize / (1024 * 1024);
-                console.log(`🗑️ Deleted: ${key}`);
+        }
+        
+        if (shouldDelete) {
+            localStorage.removeItem(key);
+            deletedCount++;
+            deletedSizeMB += itemSize / (1024 * 1024);
+            console.log(`🗑️ Deleted: ${key}`);
             }
         } catch (error) {
             console.error(`Error processing key ${key}:`, error);
