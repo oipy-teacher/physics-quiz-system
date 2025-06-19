@@ -40,14 +40,14 @@ let gradingResults = [];
 // 管理者パスワード（実際の運用では環境変数やサーバー側で管理）
 const ADMIN_PASSWORD = 'physics2024';
 
-// Firebase設定（元の動作していた設定に復旧）
+// Firebase設定（一時的に無効化）
 const firebaseConfig = {
-    apiKey: "AIzaSyBvOj5SHvVfW-gKxu7sF8QvJJQYh4wFz_M",
-    authDomain: "physics-quiz-app.firebaseapp.com",
-    projectId: "physics-quiz-app",
-    storageBucket: "physics-quiz-app.appspot.com",
-    messagingSenderId: "96107265429",
-    appId: "1:96107265429:web:dbaa46b9d23629cbc18dc6"
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
 };
 
 // Firebase初期化
@@ -1421,10 +1421,11 @@ function generateQRCode(testCode) {
             urlType = 'code';
             console.log('Using test code URL (short and clean)');
             
-            // クロスデバイス対応のためFirebaseにもデータを保存
-            if (parsedData.questions && parsedData.questions.length > 0) {
-                saveTestDataToFirebase(testCode, parsedData);
-            }
+            // クロスデバイス対応のためFirebaseにもデータを保存（一時的に無効化）
+            // if (parsedData.questions && parsedData.questions.length > 0) {
+            //     saveTestDataToFirebase(testCode, parsedData);
+            // }
+            console.log('☁️ Firebase保存は一時的に無効化されています（安定性確保のため）');
         } catch (e) {
             console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
@@ -2670,9 +2671,9 @@ async function saveSubmissionResult() {
             console.log('Offline mode - submissions after save:', savedSubmissions);
         }
         
-        // Firebase Storageに画像をアップロード
+        // Firebase Storageに画像をアップロード（一時的に無効化）
         let firebaseMessage = '';
-        if (isFirebaseAvailable) {
+        if (false) { // isFirebaseAvailable を一時的に無効化
             try {
                 await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
                 firebaseMessage = '\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能';
@@ -2681,7 +2682,7 @@ async function saveSubmissionResult() {
                 firebaseMessage = '\n\n⚠️ Firebase Storageへのアップロードに失敗\nローカル保存は完了しています';
             }
         } else {
-            firebaseMessage = '\n\n📝 ローカルに保存しました\n⚙️ Firebase設定で教員への画像共有が可能\n詳細: FIREBASE_QUICK_SETUP.md参照';
+            firebaseMessage = '\n\n📝 ローカルに保存しました\n（Firebase機能は一時的に無効化中）';
         }
         
         alert(`🎉 提出完了！\n学籍番号: ${finalStudentId}${firebaseMessage}`);
