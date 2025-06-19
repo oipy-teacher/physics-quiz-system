@@ -2584,33 +2584,46 @@ async function saveSubmissionResult() {
         
         console.log('Prepared submission data:', submissionData);
         
-        // テストコード毎に分離して保存
-        const submissionKey = `submissions_${finalTestCode}`;
-        const existingSubmissions = JSON.parse(localStorage.getItem(submissionKey) || '[]');
-        console.log('Existing submissions before save for test code', finalTestCode, ':', existingSubmissions);
-        
-        // 同じ学生IDの古い提出を削除
-        const filteredSubmissions = existingSubmissions.filter(sub => sub.studentId !== finalStudentId);
-        filteredSubmissions.push(submissionData);
-        
-        localStorage.setItem(submissionKey, JSON.stringify(filteredSubmissions));
-        
-        // 後方互換性のため、総合的な保存も維持
-        const allSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
-        const allFiltered = allSubmissions.filter(sub => sub.studentId !== finalStudentId || sub.testCode !== finalTestCode);
-        allFiltered.push(submissionData);
-        localStorage.setItem('studentSubmissions', JSON.stringify(allFiltered));
-        console.log('Submission saved to localStorage');
-        
-        // Firebase Storageに保存（クロスデバイス対応）
-        if (finalTestCode && finalTestCode.length > 0) {
-            console.log('Cross-device submission detected, attempting alternative save...');
+        // Firebase保存時はローカル保存を最小化（メタデータのみ）
+        if (isFirebaseAvailable) {
+            // Firebase利用時：軽量メタデータのみローカル保存
+            const lightSubmission = {
+                studentId: finalStudentId,
+                testCode: finalTestCode,
+                timestamp: submissionData.timestamp,
+                firebaseSaved: true,
+                questionCount: finalAnswers.length
+            };
             
-            // テストコード固有のキーで保存（異なる端末間で共有される可能性を高める）
+            const submissionKey = `submissions_${finalTestCode}`;
+            const existingSubmissions = JSON.parse(localStorage.getItem(submissionKey) || '[]');
+            const filteredSubmissions = existingSubmissions.filter(sub => sub.studentId !== finalStudentId);
+            filteredSubmissions.push(lightSubmission);
+            localStorage.setItem(submissionKey, JSON.stringify(filteredSubmissions));
+            console.log('Light metadata saved to localStorage (Firebase mode)');
+        } else {
+            // Firebase未使用時：フル保存
+            const submissionKey = `submissions_${finalTestCode}`;
+            const existingSubmissions = JSON.parse(localStorage.getItem(submissionKey) || '[]');
+            const filteredSubmissions = existingSubmissions.filter(sub => sub.studentId !== finalStudentId);
+            filteredSubmissions.push(submissionData);
+            localStorage.setItem(submissionKey, JSON.stringify(filteredSubmissions));
+            
+            const allSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+            const allFiltered = allSubmissions.filter(sub => sub.studentId !== finalStudentId || sub.testCode !== finalTestCode);
+            allFiltered.push(submissionData);
+            localStorage.setItem('studentSubmissions', JSON.stringify(allFiltered));
+            console.log('Full submission saved to localStorage (offline mode)');
+        }
+        
+        // Firebase利用時は重複ローカル保存を削除
+        if (!isFirebaseAvailable && finalTestCode && finalTestCode.length > 0) {
+            console.log('Offline mode: attempting cloud-style save...');
+            
             const cloudKey = `submission_${finalTestCode}_${finalStudentId}`;
             const cloudData = {
                 ...submissionData,
-                cloudSaved: true,
+                cloudSaved: false,
                 cloudTimestamp: new Date().toISOString()
             };
             
@@ -2622,9 +2635,13 @@ async function saveSubmissionResult() {
             }
         }
         
-        // 保存確認
-        const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
-        console.log('Verification - submissions after save:', savedSubmissions);
+        // 保存確認（Firebase利用時は軽量表示）
+        if (isFirebaseAvailable) {
+            console.log('Firebase mode: Data saved to cloud storage');
+        } else {
+            const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
+            console.log('Offline mode - submissions after save:', savedSubmissions);
+        }
         
         // Firebase Storageに画像をアップロード
         let firebaseMessage = '';
