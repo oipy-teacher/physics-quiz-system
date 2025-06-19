@@ -793,6 +793,19 @@ async function saveQuestions() {
         return;
     }
 
+    // Firebase初期化を待つ
+    if (!window.firebase || !window.db) {
+        console.log('🔥 Firebase初期化待ち...');
+        // 最大3秒待機
+        for (let i = 0; i < 30; i++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            if (window.firebase && window.db) {
+                console.log('✅ Firebase初期化完了');
+                break;
+            }
+        }
+    }
+    
     if (!db) {
         showAdminError('Firebase接続が必要です。ネットワーク接続を確認してください。');
         return;
@@ -1606,8 +1619,21 @@ async function loadSavedQuestions() {
 // Firebaseからデータを読み込み（新規追加）
 async function loadQuestionsFromFirebase() {
     try {
+        // Firebase初期化を待つ
+        if (!window.firebase || !window.db) {
+            console.log('🔥 Firebase初期化待ち...');
+            // 最大3秒待機
+            for (let i = 0; i < 30; i++) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                if (window.firebase && window.db) {
+                    console.log('✅ Firebase初期化完了');
+                    break;
+                }
+            }
+        }
+        
         if (!db) {
-            console.log('Firebase not available');
+            console.log('Firebase not available after waiting');
             return false;
         }
         
