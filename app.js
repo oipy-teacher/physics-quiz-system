@@ -419,7 +419,7 @@ function adminLogin() {
     const password = document.getElementById('adminPassword').value;
     
     if (password === ADMIN_PASSWORD) {
-        showScreen('admin');
+    showScreen('admin');
         loadSavedQuestions();
         // 管理画面移行後に解答例リストを確実に表示
         setTimeout(() => {
@@ -759,8 +759,10 @@ function removeQuestion(index) {
 
 // 問題設定保存
 async function saveQuestions() {
-    // 🧹 自動クリーニング機能を無効化（同一端末での複数人テスト対応）
-    // clearOldTestDataAutomatically();
+    // 🧹 ストレージ容量管理（改善版）
+    if (!checkStorageQuota()) {
+        console.warn('Storage quota exceeded, but continuing...');
+    }
     
     // 容量チェック（念のため）
     if (!checkStorageQuota()) {
@@ -842,8 +844,20 @@ async function generateShareUrl(data) {
             console.warn('Data URL is too long, may cause issues with QR codes');
         }
         
-        // テストコードとデータの関連付けをローカルに保存（完全データ版）
+                // テストコードとデータの関連付けをローカルに保存（効率的管理版）
         try {
+            // 古いテストコードを1つまで保持（容量管理）
+            const existingTestCodes = Object.keys(localStorage)
+                .filter(key => key.startsWith('testCode_'))
+                .sort(); // アルファベット順でソート
+            
+            // 2つ以上のテストコードがある場合、古いものを削除
+            if (existingTestCodes.length >= 2) {
+                const oldestKey = existingTestCodes[0];
+                localStorage.removeItem(oldestKey);
+                console.log(`🗑️ Removed old test code: ${oldestKey.replace('testCode_', '')}`);
+            }
+            
             // 完全なデータを保存してフォールバック対応
             const fullTestData = {
                 ...data,
@@ -870,7 +884,9 @@ async function generateShareUrl(data) {
                 localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightweightData));
                 console.log(`💾 Lightweight test code saved: ${testCode}`);
             } catch (fallbackError) {
-                console.warn('Even lightweight save failed:', fallbackError);
+                console.warn('Even lightweight save failed, triggering emergency cleanup:', fallbackError);
+                // 最後の手段：緊急クリーニング
+                emergencyCleanStorage();
             }
         }
         
@@ -2447,7 +2463,7 @@ async function saveSubmissionResult() {
             try {
                 await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
                 firebaseMessage = '\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能';
-        } catch (error) {
+    } catch (error) {
                 console.error('Firebase upload failed:', error);
                 firebaseMessage = '\n\n⚠️ Firebase Storageへのアップロードに失敗\nローカル保存は完了しています';
             }
@@ -2899,7 +2915,7 @@ async function clearAllResults() {
                                     }
                                 }
                             }
-                        } catch (error) {
+    } catch (error) {
                             console.error(`Failed to process test code ${testCodeRef.name}:`, error);
                             firebaseErrorCount++;
                         }
@@ -2911,7 +2927,7 @@ async function clearAllResults() {
             }
             
             // 3. UI更新
-            const container = document.getElementById('submissionResultsContainer');
+    const container = document.getElementById('submissionResultsContainer');
             if (container) {
                 container.style.display = 'none';
             }
@@ -2932,8 +2948,8 @@ async function clearAllResults() {
             }
             
             showAdminSuccess(resultMessage);
-            
-        } catch (error) {
+        
+    } catch (error) {
             console.error('Failed to clear data:', error);
             showAdminError(`データ削除に失敗しました: ${error.message}\n\nFirebase Consoleから手動削除してください:\nhttps://console.firebase.google.com/project/physics-quiz-app/storage`);
         }
@@ -2947,14 +2963,11 @@ function checkStorageQuota() {
         const usedMB = (used / (1024 * 1024)).toFixed(2);
         console.log(`📊 LocalStorage使用量: ${usedMB}MB / ~5MB制限`);
         
-        if (used > 4 * 1024 * 1024) { // 4MB以上で警告
-            const shouldClear = confirm(`🚨 STORAGE容量不足警告\n\n現在の使用量: ${usedMB}MB (制限: ~5MB)\n\n【対処方法】\n✅ OK → 古いデータを自動削除\n❌ キャンセル → 手動で対処\n\n※このままでは新しいテストが保存できません`);
-            
-            if (shouldClear) {
-                emergencyCleanStorage();
-            }
-            return false;
-        } else if (used > 3 * 1024 * 1024) { // 3MB以上で注意
+        if (used > 3.5 * 1024 * 1024) { // 3.5MB以上で自動クリーニング
+            console.warn(`🧹 Storage capacity high (${usedMB}MB), performing automatic cleanup...`);
+            emergencyCleanStorage();
+            return false; // クリーニング後は再チェックが必要
+        } else if (used > 3 * 1024 * 1024) { // 3MB以上で警告
             console.warn(`⚠️ Storage使用量注意: ${usedMB}MB`);
         }
         return true;
@@ -3101,8 +3114,10 @@ function emergencyCleanStorage() {
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('Physics Quiz System initialized - Version 2.2 (Auto-cleanup)');
     
-    // 🧹 自動クリーニング機能を無効化（同一端末での複数人テスト対応）
-    // clearOldTestDataAutomatically();
+    // 🧹 ストレージ容量管理（改善版）
+    if (!checkStorageQuota()) {
+        console.warn('Storage quota high, monitoring...');
+    }
     
     // 管理画面の初期化
     setupDragAndDrop();
