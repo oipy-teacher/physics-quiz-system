@@ -245,16 +245,45 @@ async function testCodeLogin() {
             }
         }
         
+        // ローカルにない場合は、Firebaseから取得を試行
+        if (!data && db) {
+            console.log('Local data not found, trying Firebase...');
+            errorDiv.textContent = 'クラウドからテストデータを取得中...';
+            
+            try {
+                const doc = await db.collection('testCodes').doc(testCode).get();
+                if (doc.exists) {
+                    const firebaseData = doc.data();
+                    console.log('Test data loaded from Firebase:', firebaseData);
+                    
+                    // 期限チェック
+                    if (firebaseData.expiresAt && new Date(firebaseData.expiresAt) < new Date()) {
+                        throw new Error('Test data has expired');
+                    }
+                    
+                    data = firebaseData;
+                    
+                    // ローカルストレージにもキャッシュ
+                    localStorage.setItem(testKey, JSON.stringify(data));
+                } else {
+                    console.log('Test code not found in Firebase');
+                }
+            } catch (firebaseError) {
+                console.warn('Firebase読み込みエラー:', firebaseError);
+            }
+        }
+        
         // データが見つからない場合の対処
         if (!data) {
             errorDiv.innerHTML = `
                 <div style="text-align: left;">
-                    <strong>テストコードが見つかりません。</strong><br><br>
-                    <strong>解決方法：</strong><br>
-                    1. 教員から受け取ったQRコードをスキャンしてください<br>
-                    2. または、教員から受け取った完全なURLにアクセスしてください<br>
-                    3. テストコードのみでは別端末からアクセスできません<br><br>
-                    <em>※ QRコードまたは完全URLにテストデータが含まれています</em>
+                    <strong>テストコード「${testCode}」が見つかりません。</strong><br><br>
+                    <strong>確認事項：</strong><br>
+                    1. テストコードの入力間違いがないか<br>
+                    2. テストの有効期限が切れていないか<br>
+                    3. ネットワーク接続が正常か<br><br>
+                    <strong>推奨方法：</strong><br>
+                    教員から受け取ったQRコードをスキャンしてください
                 </div>
             `;
             errorDiv.style.display = 'block';
@@ -991,6 +1020,39 @@ function getCurrentStorageUsage() {
     return totalSize;
 }
 
+// テストデータをFirebaseに保存（クロスデバイス対応）
+async function saveTestDataToFirebase(testCode, testData) {
+    try {
+        if (!db) {
+            console.log('Firebase not available, skipping cloud save');
+            return;
+        }
+        
+        console.log(`☁️ Firebaseにテストデータを保存中: ${testCode}`);
+        
+        const docRef = await db.collection('testCodes').doc(testCode).set({
+            ...testData,
+            testCode: testCode,
+            updatedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7日後に期限切れ
+        });
+        
+        console.log(`✅ Firebaseに保存成功: ${testCode}`);
+        
+        // ローカルストレージにもクラウド保存済みマークを追加
+        const localKey = `testCode_${testCode}`;
+        const localData = localStorage.getItem(localKey);
+        if (localData) {
+            const parsed = JSON.parse(localData);
+            parsed.cloudSaved = true;
+            localStorage.setItem(localKey, JSON.stringify(parsed));
+        }
+        
+    } catch (error) {
+        console.warn('Firebase保存に失敗:', error);
+    }
+}
+
 // 既存のテストコードをチェック
 function checkExistingTestCode(dataToSave) {
     // ローカルストレージから既存のテストコードを検索
@@ -1421,32 +1483,15 @@ function generateQRCode(testCode) {
             const parsedData = JSON.parse(testData);
             console.log('Parsed test data keys:', Object.keys(parsedData));
             
-            // 【クロスデバイス対応強化】データ埋め込み方式を優先使用
-            if (parsedData.dataUrl) {
-                targetUrl = parsedData.dataUrl;
-                urlType = 'data';
-                console.log('Using embedded data URL (cross-device compatible)');
-            } else if (parsedData.questions && parsedData.questions.length > 0) {
-                // 完全データでクロスデバイス対応URL生成
-                console.log('Generating cross-device compatible data URL...');
-                const fullDataForQR = {
-                    ...parsedData,
-                    testCode: testCode,
-                    created: parsedData.created
-                };
-                const encodedData = btoa(encodeURIComponent(JSON.stringify(fullDataForQR)));
-                const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
-                
-                // データサイズに関わらずデータ埋め込み方式を使用（クロスデバイス優先）
-                targetUrl = dataUrl;
-                urlType = 'data';
-                console.log(`Generated full data URL for cross-device compatibility (${dataUrl.length} chars)`);
-             } else {
-                 // 他にデータが利用できない場合のみテストコード方式
-                 targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
-                 urlType = 'code';
-                 console.log('Using test code URL as fallback');
-             }
+            // 【シンプル方式】テストコード方式を優先（短URL）
+            targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+            urlType = 'code';
+            console.log('Using test code URL (short and clean)');
+            
+            // クロスデバイス対応のためFirebaseにもデータを保存
+            if (parsedData.questions && parsedData.questions.length > 0) {
+                saveTestDataToFirebase(testCode, parsedData);
+            }
          } catch (e) {
             console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
