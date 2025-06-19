@@ -117,9 +117,6 @@ window.onload = function() {
     if (!hasData && !hasCode) {
         console.log('Direct access to main URL - Admin mode only');
         enableAdminOnlyMode();
-        
-        // 教員ログイン状態をチェック
-        checkAdminLoginStatus();
     }
     
     // ローカルストレージから問題データを読み込む
@@ -156,37 +153,12 @@ window.onload = function() {
     
     // Firebase初期化
     initFirebase();
+    
+    // 初期画面は必ずログイン画面を表示
+    showScreen('login');
 };
 
-// 教員ログイン状態をチェック
-function checkAdminLoginStatus() {
-    const isLoggedIn = localStorage.getItem('physicsQuizAdminLoggedIn');
-    const loginTime = localStorage.getItem('physicsQuizAdminLoginTime');
-    
-    if (isLoggedIn === 'true' && loginTime) {
-        const loginTimestamp = parseInt(loginTime);
-        const now = Date.now();
-        const hoursPassed = (now - loginTimestamp) / (1000 * 60 * 60);
-        
-        // 24時間以内なら自動ログイン
-        if (hoursPassed < 24) {
-            console.log('Auto-login: Admin session still valid');
-            setTimeout(() => {
-                showScreen('admin');
-                loadSavedQuestions();
-                renderAnswerExampleList();
-            }, 100);
-            return;
-        } else {
-            // 期限切れの場合はログイン状態をクリア
-            localStorage.removeItem('physicsQuizAdminLoggedIn');
-            localStorage.removeItem('physicsQuizAdminLoginTime');
-        }
-    }
-    
-    // ログインしていない場合はログイン画面を表示
-    showScreen('login');
-}
+
 
 // 教員専用モードを有効化
 function enableAdminOnlyMode() {
@@ -508,10 +480,6 @@ function adminLogin() {
     const password = document.getElementById('adminPassword').value;
     
     if (password === ADMIN_PASSWORD) {
-        // 教員ログイン状態を保存（24時間有効）
-        localStorage.setItem('physicsQuizAdminLoggedIn', 'true');
-        localStorage.setItem('physicsQuizAdminLoginTime', Date.now().toString());
-        
         showScreen('admin');
         loadSavedQuestions();
         // 管理画面移行後に解答例リストを確実に表示
@@ -1843,10 +1811,6 @@ function showAdminError(message) {
 
 // ログイン画面に戻る
 function backToLogin() {
-    // 教員ログイン状態をクリア
-    localStorage.removeItem('physicsQuizAdminLoggedIn');
-    localStorage.removeItem('physicsQuizAdminLoginTime');
-    
     showScreen('login');
     // フォームをリセット
     const studentIdInput = document.getElementById('studentId');
