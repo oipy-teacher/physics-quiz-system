@@ -839,9 +839,9 @@ async function generateShareUrl(data) {
         // QRコードとURLに埋め込むため、データサイズを確認
         const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
         
-        if (dataUrl.length > 2000) {
-            // URLが長すぎる場合は圧縮を試行
-            console.warn('Data URL is too long, may cause issues with QR codes');
+        if (dataUrl.length > 1500) {
+            // URLが長すぎる場合はQRコード用に警告（データは保存するが、QRはテストコード方式を推奨）
+            console.warn(`Data URL is too long for QR codes (${dataUrl.length} chars), QR will use test code method`);
         }
         
                 // テストコードとデータの関連付けをローカルに保存（効率的管理版）
@@ -1346,19 +1346,26 @@ function generateQRCode(testCode) {
     
     let qrUrl;
     let targetUrl;
+    let urlType = 'code'; // デフォルトはテストコード方式
     
     if (testData) {
         try {
             const parsedData = JSON.parse(testData);
-            console.log('Parsed test data:', parsedData);
+            console.log('Parsed test data keys:', Object.keys(parsedData));
             
-            if (parsedData.dataUrl) {
-                // データ埋め込みURLを使用（最優先）
+            // まず軽量なテストコード方式を優先（QRコード制限対策）
+            targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+            urlType = 'code';
+            console.log('Using test code URL (QR-friendly)');
+            
+            // データURLがある場合でもサイズをチェック
+            if (parsedData.dataUrl && parsedData.dataUrl.length < 1500) {
                 targetUrl = parsedData.dataUrl;
-                console.log('Using embedded data URL (recommended for cross-device)');
+                urlType = 'data';
+                console.log('Using embedded data URL (short enough for QR)');
             } else if (parsedData.questions && parsedData.questions.length > 0) {
-                // 完全データがある場合、その場でデータ埋め込みURLを生成
-                console.log('Generating new data URL from complete test data...');
+                // 完全データがある場合でも軽量版を試行
+                console.log('Checking if data can be embedded in QR...');
                 const dataToEmbed = {
                     questions: parsedData.questions,
                     answerExamples: parsedData.answerExamples || [],
@@ -1367,42 +1374,61 @@ function generateQRCode(testCode) {
                     created: parsedData.created
                 };
                 const encodedData = btoa(encodeURIComponent(JSON.stringify(dataToEmbed)));
-                targetUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
-                console.log('Generated data URL for cross-device compatibility');
-            } else if (parsedData.encodedData) {
-                // エンコードされたデータからURLを再構築
-                targetUrl = `${window.location.origin}${window.location.pathname}?data=${parsedData.encodedData}`;
-                console.log('Using stored encoded data URL');
-            } else {
-                // テストコード方式（最後の手段）
-                targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
-                console.log('Using test code URL (local device only - not recommended)');
+                const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
+                
+                if (dataUrl.length < 1500) {
+                    targetUrl = dataUrl;
+                    urlType = 'data';
+                    console.log('Generated short data URL for QR compatibility');
+                } else {
+                    console.warn(`Data URL too long (${dataUrl.length} chars), using test code method`);
+                }
             }
         } catch (e) {
             console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
             targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+            urlType = 'code';
         }
     } else {
         // データが見つからない場合はテストコード方式
         targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+        urlType = 'code';
         console.log('No test data found, using test code URL');
     }
     
     console.log('Final target URL:', targetUrl);
     console.log('URL length:', targetUrl.length);
+    console.log('URL type:', urlType);
+    
+    // URLが長すぎる場合は強制的にテストコード方式
+    if (targetUrl.length > 2000) {
+        console.warn('URL still too long, forcing test code method');
+        targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
+        urlType = 'code';
+    }
     
     // QRコード画像URLを生成
     qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(targetUrl)}`;
     
+    // QRコード表示
     qrContainer.innerHTML = `
         <div style="text-align: center;">
-            <img src="${qrUrl}" alt="QRコード" style="border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;">
+            <img src="${qrUrl}" alt="QRコード" style="border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;" 
+                 onload="console.log('QR code loaded successfully')"
+                 onerror="console.error('QR code failed to load'); this.style.display='none'; this.nextElementSibling.style.display='block';">
+            <div style="display: none; padding: 20px; background: #ffe6e6; border: 1px solid #ff9999; border-radius: 8px; color: #cc0000;">
+                QRコード生成エラー<br>
+                <small>テストコード「${testCode}」を直接入力してください</small>
+            </div>
             <div style="font-size: 12px; color: #666; margin-top: 5px;">
                 テストコード: <strong>${testCode}</strong>
             </div>
-            <div style="font-size: 10px; color: #999; margin-top: 5px; word-break: break-all;">
-                URL: ${targetUrl.length > 50 ? targetUrl.substring(0, 50) + '...' : targetUrl}
+            <div style="font-size: 10px; color: #999; margin-top: 5px;">
+                ${urlType === 'data' ? '📱 データ埋め込み (クロスデバイス対応)' : '💾 テストコード方式 (同一デバイス推奨)'}
+            </div>
+            <div style="font-size: 10px; color: #999; margin-top: 2px; word-break: break-all;">
+                ${targetUrl.length > 60 ? targetUrl.substring(0, 60) + '...' : targetUrl}
             </div>
         </div>
     `;
