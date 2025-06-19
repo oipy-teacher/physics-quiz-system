@@ -3013,9 +3013,9 @@ function checkStorageQuota() {
             localStorage.setItem('lastStorageLog', now.toString());
         }
         
-        if (used > 3.5 * 1024 * 1024) { // 3.5MB以上で自動クリーニング
+        if (used > 4.5 * 1024 * 1024) { // 4.5MB以上で緊急クリーニング（制限を緩和）
             if (shouldLog) {
-                console.warn(`🧹 Storage capacity high (${usedMB}MB), performing automatic cleanup...`);
+                console.warn(`🚨 Storage capacity critical (${usedMB}MB), performing emergency cleanup...`);
             }
             emergencyCleanStorage();
             return false; // クリーニング後は再チェックが必要
@@ -3031,30 +3031,47 @@ function checkStorageQuota() {
     }
 }
 
-// 🧹 一回限りテスト用: 古いデータを自動クリア
+// 🧹 安全な自動クリーニング: 複数人受験対応版
 function clearOldTestDataAutomatically() {
-    console.log('🧹 自動クリーニング開始: 一回限りテスト用');
+    console.log('🧹 安全自動クリーニング開始: 複数人受験対応');
     
     let deletedCount = 0;
     const keysToDelete = [];
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
     
-    // 現在のテストコードを安全に取得
-    const currentCode = getCurrentTestCode();
-    
-    // 古いテストコードを全て削除（現在のもの以外）
+    // 安全な削除：3日以上古いデータのみ削除（複数人受験を保護）
     Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('testCode_') && currentCode && key !== `testCode_${currentCode}`) {
-            keysToDelete.push(key);
-        }
-        
-        // 学生の解答データも削除（Firebase に保存されているため）
-        if (key.startsWith('submissions_') || key.startsWith('answers_')) {
-            keysToDelete.push(key);
-        }
-        
-        // 古い学生データも削除
-        if (key.startsWith('studentSubmissions')) {
-            keysToDelete.push(key);
+        try {
+            // 3日以上古いテストコードのみ削除
+            if (key.startsWith('testCode_')) {
+                const data = localStorage.getItem(key);
+                if (data) {
+                    const parsedData = JSON.parse(data);
+                    const created = new Date(parsedData.created || parsedData.lastUpdated || 0);
+                    if (created < threeDaysAgo) {
+                        keysToDelete.push(key);
+                        console.log(`Marking old test code for deletion: ${key} (${created.toLocaleDateString()})`);
+                    }
+                }
+            }
+            
+            // 古い学生データのみ削除（3日以上前）
+            if (key.startsWith('submissions_') || key.startsWith('answers_') || key.startsWith('studentSubmissions')) {
+                const data = localStorage.getItem(key);
+                if (data) {
+                    const parsedData = JSON.parse(data);
+                    const timestamp = new Date(parsedData.timestamp || parsedData.created || 0);
+                    if (timestamp < threeDaysAgo) {
+                        keysToDelete.push(key);
+                    }
+                }
+            }
+        } catch (error) {
+            // 破損データのみ削除
+            if (key.startsWith('testCode_') || key.startsWith('submissions_') || key.startsWith('answers_')) {
+                keysToDelete.push(key);
+                console.log(`Marking corrupted data for deletion: ${key}`);
+            }
         }
     });
     
@@ -3071,7 +3088,9 @@ function clearOldTestDataAutomatically() {
     
     if (deletedCount > 0) {
         const usedMB = (JSON.stringify(localStorage).length / (1024 * 1024)).toFixed(2);
-        console.log(`🧹 自動クリーニング完了: ${deletedCount}件削除, 現在${usedMB}MB使用中`);
+        console.log(`🧹 安全クリーニング完了: ${deletedCount}件削除 (3日以上古いデータのみ), 現在${usedMB}MB使用中`);
+    } else {
+        console.log('🧹 クリーニング不要: 削除対象なし (アクティブなテストデータを保護)');
     }
 }
 
@@ -3111,11 +3130,11 @@ function getCurrentTestCode() {
 }
 
 function emergencyCleanStorage() {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000); // 1日前に変更（複数人受験対応）
     let deletedCount = 0;
     let deletedSizeMB = 0;
     
-    console.log('🧹 緊急ストレージクリーニング開始...');
+    console.log('🚨 緊急ストレージクリーニング開始 (1日以上古いデータのみ)...');
     
     // 安全にキー一覧を取得
     const keys = [];
@@ -3143,7 +3162,7 @@ function emergencyCleanStorage() {
                     const data = JSON.parse(item);
                     const lastUpdated = new Date(data.lastUpdated || 0);
                     
-                    if (lastUpdated < sevenDaysAgo) {
+                    if (lastUpdated < oneDayAgo) {
                         shouldDelete = true;
                     }
                 } catch (error) {
@@ -3158,7 +3177,7 @@ function emergencyCleanStorage() {
                     const data = JSON.parse(item);
                     if (data.timestamp) {
                         const submissionDate = new Date(data.timestamp);
-                        if (submissionDate < sevenDaysAgo) {
+                        if (submissionDate < oneDayAgo) {
                             shouldDelete = true;
                         }
                     } else {
@@ -3200,7 +3219,7 @@ function emergencyCleanStorage() {
     const newUsedMB = (newUsed / (1024 * 1024)).toFixed(2);
     const freedMB = deletedSizeMB.toFixed(2);
     
-    showAdminSuccess(`🧹 ストレージクリーニング完了\n\n📊 削除項目: ${deletedCount}件\n💾 解放容量: ${freedMB}MB\n📊 現在使用量: ${newUsedMB}MB\n\n✅ 新しいテストを作成できます！`);
+    showAdminSuccess(`🚨 緊急ストレージクリーニング完了\n\n📊 削除項目: ${deletedCount}件 (1日以上古いデータのみ)\n💾 解放容量: ${freedMB}MB\n📊 現在使用量: ${newUsedMB}MB\n\n✅ アクティブなテストデータは保護されました`);
     
     // ページリロードで反映
     setTimeout(() => {
