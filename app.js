@@ -2722,21 +2722,109 @@ function closeTestCodeSelectionModal() {
     }
 }
 
-// 全解答データをクリア
-function clearAllResults() {
-    if (confirm('全ての解答データを削除しますか？この操作は取り消せません。')) {
+// 全解答データをクリア（LocalStorage + Firebase Storage対応）
+async function clearAllResults() {
+    const confirmMessage = `🚨 全ての解答データを削除しますか？
+
+【削除対象】
+✅ ローカル解答データ（即座に削除）
+✅ Firebase Storage画像（可能な範囲で削除）
+
+【注意】
+⚠️ この操作は取り消せません
+⚠️ Firebase削除にはネットワーク接続が必要
+⚠️ 一部のFirebaseデータは手動削除が必要な場合があります
+
+本当に削除しますか？`;
+
+    if (confirm(confirmMessage)) {
         try {
-            localStorage.removeItem('studentSubmissions');
+            showAdminSuccess('データ削除を開始しています...');
             
+            // 1. LocalStorageデータを削除
+            let deletedLocalCount = 0;
+            const keysToDelete = [];
+            
+            Object.keys(localStorage).forEach(key => {
+                if (key.startsWith('submissions_') || 
+                    key.startsWith('studentSubmissions') ||
+                    key.startsWith('answers_')) {
+                    keysToDelete.push(key);
+                }
+            });
+            
+            keysToDelete.forEach(key => {
+                localStorage.removeItem(key);
+                deletedLocalCount++;
+            });
+            
+            // 2. Firebase Storage削除を試行
+            let firebaseDeletedCount = 0;
+            let firebaseErrorCount = 0;
+            
+            if (typeof firebase !== 'undefined' && firebase.storage) {
+                try {
+                    const storageRef = firebase.storage().ref('submissions');
+                    const submissionsList = await storageRef.listAll();
+                    
+                    showAdminSuccess(`Firebase削除中... ${submissionsList.prefixes.length}個のテストコードを確認`);
+                    
+                    // 各テストコードフォルダを削除
+                    for (const testCodeRef of submissionsList.prefixes) {
+                        try {
+                            const students = await testCodeRef.listAll();
+                            
+                            // 各学生フォルダの画像を削除
+                            for (const studentRef of students.prefixes) {
+                                const files = await studentRef.listAll();
+                                
+                                for (const fileRef of files.items) {
+                                    try {
+                                        await fileRef.delete();
+                                        firebaseDeletedCount++;
+                                    } catch (deleteError) {
+                                        console.error(`Failed to delete ${fileRef.fullPath}:`, deleteError);
+                                        firebaseErrorCount++;
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.error(`Failed to process test code ${testCodeRef.name}:`, error);
+                            firebaseErrorCount++;
+                        }
+                    }
+                } catch (firebaseError) {
+                    console.error('Firebase deletion error:', firebaseError);
+                    firebaseErrorCount++;
+                }
+            }
+            
+            // 3. UI更新
             const container = document.getElementById('submissionResultsContainer');
             if (container) {
                 container.style.display = 'none';
             }
             
-            showAdminSuccess('全ての解答データを削除しました。');
+            // 4. 結果表示
+            let resultMessage = `✅ データ削除完了\n\n📊 削除結果:\n• ローカルデータ: ${deletedLocalCount}件`;
+            
+            if (firebaseDeletedCount > 0) {
+                resultMessage += `\n• Firebase画像: ${firebaseDeletedCount}件`;
+            }
+            
+            if (firebaseErrorCount > 0) {
+                resultMessage += `\n\n⚠️ Firebase削除エラー: ${firebaseErrorCount}件\n手動削除が必要な場合があります`;
+            }
+            
+            if (firebaseDeletedCount === 0 && firebaseErrorCount === 0) {
+                resultMessage += `\n\n💡 Firebase削除は実行されませんでした\n（接続エラーまたはデータなし）`;
+            }
+            
+            showAdminSuccess(resultMessage);
+            
         } catch (error) {
-            console.error('Failed to clear student submissions:', error);
-            showAdminError('解答データの削除に失敗しました。');
+            console.error('Failed to clear data:', error);
+            showAdminError(`データ削除に失敗しました: ${error.message}\n\nFirebase Consoleから手動削除してください:\nhttps://console.firebase.google.com/project/physics-quiz-app/storage`);
         }
     }
 }
