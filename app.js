@@ -1999,6 +1999,9 @@ function showSubmissionComplete() {
     const savedSubmissions = JSON.parse(localStorage.getItem('studentSubmissions') || '[]');
     const mySubmission = savedSubmissions.find(s => s.studentId === finalStudentId);
     
+    // 解答例表示部分を生成
+    const answerExamplesHtml = generateAnswerExamplesDisplay();
+    
     resultContainer.innerHTML = `
         <h2>✅ 提出完了</h2>
         <div style="text-align: center; margin: 30px 0;">
@@ -2025,8 +2028,69 @@ function showSubmissionComplete() {
                 </div>
             `}
         </div>
+        
+        ${answerExamplesHtml}
+        
         <button class="nav-button" onclick="backToLogin()">終了</button>
     `;
+}
+
+// 解答例表示部分を生成
+function generateAnswerExamplesDisplay() {
+    // 現在のテストデータから解答例を取得
+    const currentAnswerExamples = currentTestData ? currentTestData.answerExamples : answerExamples;
+    const currentQuestions = currentTestData ? currentTestData.questions : questions;
+    
+    if (!currentAnswerExamples || currentAnswerExamples.length === 0) {
+        return ''; // 解答例がない場合は何も表示しない
+    }
+    
+    console.log('解答例データ:', currentAnswerExamples);
+    console.log('問題データ:', currentQuestions);
+    
+    let examplesHtml = '';
+    
+    // 問題ごとに解答例を表示
+    currentQuestions.forEach((question, questionIndex) => {
+        // この問題に対応する解答例を探す
+        const relatedExamples = currentAnswerExamples.filter(example => 
+            example.questionIndex === questionIndex
+        );
+        
+        if (relatedExamples.length > 0) {
+            examplesHtml += `
+                <div style="margin: 30px 0; text-align: left;">
+                    <h3 style="color: #007aff; margin-bottom: 15px;">📖 問題${questionIndex + 1}の解答例</h3>
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border: 2px solid #e9ecef;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                            ${relatedExamples.map((example, exampleIndex) => `
+                                <div style="text-align: center;">
+                                    <h4 style="color: #666; margin-bottom: 10px;">解答例 ${exampleIndex + 1}</h4>
+                                    <img src="${example.image}" 
+                                         style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" 
+                                         alt="問題${questionIndex + 1}の解答例${exampleIndex + 1}">
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    });
+    
+    if (examplesHtml) {
+        return `
+            <div style="margin: 40px 0; border-top: 2px solid #e9ecef; padding-top: 30px;">
+                <h2 style="color: #007aff; text-align: center; margin-bottom: 20px;">📚 解答例</h2>
+                <p style="text-align: center; color: #666; margin-bottom: 30px;">
+                    参考として解答例をご確認ください。自分の解答と比較して学習に役立ててください。
+                </p>
+                ${examplesHtml}
+            </div>
+        `;
+    }
+    
+    return '';
 }
 
 // ========== 不正検知設定 ==========
