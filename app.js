@@ -834,29 +834,29 @@ async function generateShareUrl(data) {
         });
         
         // 軽量化を一時無効化（デバッグのため）
-        const lightweightData = {
+        // 【緊急修正】完全データでQRコード生成（軽量化無効）
+        const fullData = {
             ...data,
             testCode: testCode,
             created: new Date().toISOString()
         };
         
         // デバッグ情報を追加
-        console.log('軽量化前データサイズ:', JSON.stringify(data).length);
-        console.log('軽量化後データサイズ:', JSON.stringify(lightweightData).length);
+        console.log('完全データサイズ:', JSON.stringify(fullData).length);
         console.log('画像データ確認:', {
-            questions: lightweightData.questions.map(q => ({
+            questions: fullData.questions.map(q => ({
                 number: q.number,
                 hasImage: !!q.imageData,
                 imageSize: q.imageData ? q.imageData.length : 0
             })),
-            answerExamples: lightweightData.answerExamples.map(ex => ({
+            answerExamples: fullData.answerExamples.map(ex => ({
                 description: ex.description,
                 hasImage: !!ex.imageData,
                 imageSize: ex.imageData ? ex.imageData.length : 0
             }))
         });
         
-        const encodedData = btoa(encodeURIComponent(JSON.stringify(lightweightData)));
+        const encodedData = btoa(encodeURIComponent(JSON.stringify(fullData)));
         
         // QRコードとURLに埋め込むため、データサイズを確認
         const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
