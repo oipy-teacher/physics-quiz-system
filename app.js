@@ -415,8 +415,12 @@ function adminLogin() {
     const password = document.getElementById('adminPassword').value;
     
     if (password === ADMIN_PASSWORD) {
-    showScreen('admin');
+        showScreen('admin');
         loadSavedQuestions();
+        // 管理画面移行後に解答例リストを確実に表示
+        setTimeout(() => {
+            renderAnswerExampleList();
+        }, 100);
     } else {
         showAdminError('パスワードが正しくありません。');
     }
@@ -436,6 +440,8 @@ function showScreen(screen) {
         case 'admin':
             document.getElementById('adminScreen').style.display = 'block';
             updateFirebaseStatus();
+            // 管理画面表示時に解答例リストも表示
+            renderAnswerExampleList();
             break;
         case 'test':
             document.getElementById('testScreen').style.display = 'flex';
@@ -1486,7 +1492,8 @@ function loadQuestionsFromUrl() {
             if (document.getElementById('questionList')) {
                 renderQuestionList();
             }
-            if (document.getElementById('answerExampleList')) {
+            // 解答例リストは管理画面が表示されている場合のみ更新
+            if (currentScreen === 'admin' || document.getElementById('adminScreen').style.display === 'block') {
                 renderAnswerExampleList();
             }
             
@@ -1529,7 +1536,8 @@ async function loadQuestionsFromServer() {
                 if (document.getElementById('questionList')) {
                     renderQuestionList();
                 }
-                if (document.getElementById('answerExampleList')) {
+                // 解答例リストは管理画面が表示されている場合のみ更新
+                if (currentScreen === 'admin' || document.getElementById('adminScreen').style.display === 'block') {
                     renderAnswerExampleList();
                 }
                 
@@ -1558,7 +1566,8 @@ function loadQuestionsFromLocalStorage() {
         
         if (savedAnswerExamples) {
             answerExamples = JSON.parse(savedAnswerExamples);
-            if (document.getElementById('answerExampleList')) {
+            // 解答例リストは管理画面が表示されている場合のみ更新
+            if (currentScreen === 'admin' || document.getElementById('adminScreen').style.display === 'block') {
                 renderAnswerExampleList();
             }
         }
