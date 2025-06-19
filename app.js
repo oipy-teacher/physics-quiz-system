@@ -584,6 +584,23 @@ function addQuestion(imageData) {
     };
 
     questions.push(question);
+    
+    // ローカルストレージに保存
+    localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
+    
+    // 統合データも更新
+    try {
+        const savedData = localStorage.getItem('physicsQuizData');
+        if (savedData) {
+            const data = JSON.parse(savedData);
+            data.questions = questions;
+            data.lastUpdated = new Date().toISOString();
+            localStorage.setItem('physicsQuizData', JSON.stringify(data));
+        }
+    } catch (error) {
+        console.warn('Failed to update integrated data:', error);
+    }
+    
     renderQuestionList();
     showAdminSuccess('問題を追加しました。');
 }
@@ -597,6 +614,23 @@ function addAnswerExample(imageData) {
     };
     
     answerExamples.push(answerExample);
+    
+    // ローカルストレージに保存
+    localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
+    
+    // 統合データも更新
+    try {
+        const savedData = localStorage.getItem('physicsQuizData');
+        if (savedData) {
+            const data = JSON.parse(savedData);
+            data.answerExamples = answerExamples;
+            data.lastUpdated = new Date().toISOString();
+            localStorage.setItem('physicsQuizData', JSON.stringify(data));
+        }
+    } catch (error) {
+        console.warn('Failed to update integrated data:', error);
+    }
+    
     renderAnswerExampleList();
     showAdminSuccess('解答例画像を追加しました。');
 }
@@ -1600,10 +1634,13 @@ function loadQuestionsFromLocalStorage() {
         
         if (savedAnswerExamples) {
             answerExamples = JSON.parse(savedAnswerExamples);
+            console.log('Answer examples loaded from localStorage:', answerExamples.length);
             // 解答例リストは管理画面が表示されている場合のみ更新
             if (currentScreen === 'admin' || document.getElementById('adminScreen').style.display === 'block') {
                 renderAnswerExampleList();
             }
+        } else {
+            console.log('No answer examples found in localStorage');
         }
         
         if (savedEnabled === 'true') {
