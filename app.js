@@ -786,166 +786,74 @@ function removeQuestion(index) {
     }
 }
 
-// 問題設定保存
+// 問題設定保存（Firebase完全版）
 async function saveQuestions() {
-    // 🧹 ストレージ容量管理（改善版）
-    if (!checkStorageQuota()) {
-        console.warn('Storage quota exceeded, but continuing...');
-    }
-    
-    // 容量チェック（念のため）
-    if (!checkStorageQuota()) {
-        showAdminError('❌ 容量不足により保存できません。');
-        return;
-    }
-
     if (questions.length === 0) {
         showAdminError('問題が設定されていません。');
         return;
     }
 
-    // 正解パターンのチェックは採点システムで実施
-
-    // データを準備
-    const dataToSave = {
-        questions: questions,
-        answerExamples: answerExamples,
-        testEnabled: true,
-        lastUpdated: new Date().toISOString(),
-        teacherId: Date.now() // 教員セッションID
-    };
+    if (!db) {
+        showAdminError('Firebase接続が必要です。ネットワーク接続を確認してください。');
+        return;
+    }
 
     try {
-        // ローカルストレージに保存
-        localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
-        localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
-        localStorage.setItem('physicsQuizEnabled', 'true');
-        localStorage.setItem('physicsQuizData', JSON.stringify(dataToSave));
-        localStorage.setItem('physicsQuizTeacherId', dataToSave.teacherId.toString());
+        console.log('🔥 Firebase完全版で保存開始...');
+        
+        // データを準備
+        const dataToSave = {
+            questions: questions,
+            answerExamples: answerExamples,
+            testEnabled: true,
+            lastUpdated: new Date().toISOString(),
+            teacherId: Date.now() // 教員セッションID
+        };
 
+        // 【Firebase完全保存】テストコード生成とFirebase保存
+        const testCode = generateShortId();
+        console.log(`🔥 生成されたテストコード: ${testCode}`);
+        
+        // Firebaseに完全データを保存
+        await db.collection('testCodes').doc(testCode).set({
+            ...dataToSave,
+            testCode: testCode,
+            created: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30日後に期限切れ
+        });
+        
+        console.log(`✅ Firebase保存成功: ${testCode}`);
+        
+        // ローカルには軽量メタデータのみキャッシュ
+        const lightCache = {
+            testCode: testCode,
+            created: new Date().toISOString(),
+            cloudSaved: true,
+            questionsCount: questions.length,
+            answerExamplesCount: answerExamples.length,
+            lastUpdated: dataToSave.lastUpdated
+        };
+        
+        localStorage.setItem('physicsQuizEnabled', 'true');
+        localStorage.setItem('physicsQuizActiveTestCode', testCode);
+        localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightCache));
+        
         testEnabled = true;
         
-        showAdminSuccess('問題設定を保存しました。テストが受験可能になりました。');
+        showAdminSuccess(`✅ Firebase保存完了！テストコード: ${testCode}`);
         
-        // 既存のテストコードがあるかチェック
-        checkExistingTestCode(dataToSave);
+        // QRコード生成オプションを表示
+        showShareOptions(dataToSave, { testCode: testCode, cloudSaved: true });
         
         updateTestStatus();
     } catch (error) {
-        showAdminError('保存に失敗しました。データが大きすぎる可能性があります。');
-        console.error('Save error:', error);
+        console.error('Firebase保存エラー:', error);
+        showAdminError('Firebase保存に失敗しました。ネットワーク接続を確認してください。');
     }
 }
 
-// 共有URL生成（GitHub Gist使用）
-async function generateShareUrl(data) {
-    try {
-        const testCode = generateShortId();
-        
-        // 【QR生成直前容量確保】必要に応じて古いデータを削除
-        ensureStorageSpaceForQR(data);
-        
-        // 元の形式でQRコード用データ準備（圧縮なし）
-        const qrData = {
-            ...data,
-            testCode: testCode,
-            created: new Date().toISOString()
-        };
-        
-        console.log('QRコード用データサイズ:', JSON.stringify(qrData).length);
-        console.log('画像データ確認:', {
-            questions: qrData.questions.map(q => ({
-                number: q.number,
-                hasImage: !!q.imageData,
-                imageSize: q.imageData ? q.imageData.length : 0
-            })),
-            answerExamples: qrData.answerExamples.map(ex => ({
-                description: ex.description,
-                hasImage: !!ex.imageData,
-                imageSize: ex.imageData ? ex.imageData.length : 0
-            }))
-        });
-        
-        const encodedData = btoa(encodeURIComponent(JSON.stringify(qrData)));
-        
-        // QRコードとURLに埋め込むため、データサイズを確認
-        const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
-        
-        console.log('エンコード後URLサイズ:', dataUrl.length);
-        
-        if (dataUrl.length > 2000) {
-            // URLが長すぎる場合はQRコード用に警告（データは保存するが、QRはテストコード方式を推奨）
-            console.warn(`Data URL may be too long for some QR codes (${dataUrl.length} chars), consider reducing image size`);
-        }
-        
-                // テストコードとデータの関連付けをローカルに保存（効率的管理版）
-        try {
-            // 古いテストコードを1つまで保持（容量管理）
-            const existingTestCodes = Object.keys(localStorage)
-                .filter(key => key.startsWith('testCode_'))
-                .sort(); // アルファベット順でソート
-            
-            // 2つ以上のテストコードがある場合、古いものを削除
-            if (existingTestCodes.length >= 2) {
-                const oldestKey = existingTestCodes[0];
-                localStorage.removeItem(oldestKey);
-                console.log(`🗑️ Removed old test code: ${oldestKey.replace('testCode_', '')}`);
-            }
-            
-            // 完全なデータを保存してフォールバック対応
-            const fullTestData = {
-                ...data,
-                testCode: testCode,
-                created: new Date().toISOString(),
-                cloudSaved: true,
-                dataUrl: dataUrl // 完全URLも保存
-            };
-            localStorage.setItem(`testCode_${testCode}`, JSON.stringify(fullTestData));
-            console.log(`💾 Complete test data saved: ${testCode}`);
-        } catch (storageError) {
-            console.warn('Failed to save complete test data, saving lightweight version:', storageError);
-            // 容量不足の場合は軽量版
-            try {
-                const lightweightData = {
-                    testCode: testCode,
-                    created: new Date().toISOString(),
-                    cloudSaved: true,
-                    questions: data.questions ? data.questions.length : 0,
-                    hasAnswerExamples: data.answerExamples ? data.answerExamples.length > 0 : false,
-                    lastUpdated: data.lastUpdated,
-                    dataUrl: dataUrl // URLは保存しておく
-                };
-                localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightweightData));
-                console.log(`💾 Lightweight test code saved: ${testCode}`);
-            } catch (fallbackError) {
-                console.warn('Even lightweight save failed, triggering emergency cleanup:', fallbackError);
-                // 最後の手段：緊急クリーニング
-                emergencyCleanStorage();
-            }
-        }
-        
-        return { testCode, cloudSaved: true, encodedData: encodedData, dataUrl: dataUrl };
-    } catch (error) {
-        console.error('Share URL generation error:', error);
-        // フォールバック：軽量版ローカルストレージ
-        const testCode = generateShortId();
-        try {
-            const lightweightData = {
-                testCode: testCode,
-                created: new Date().toISOString(),
-                cloudSaved: false,
-                questions: data.questions ? data.questions.length : 0,
-                hasAnswerExamples: data.answerExamples ? data.answerExamples.length > 0 : false,
-                lastUpdated: data.lastUpdated
-            };
-            localStorage.setItem(`testCode_${testCode}`, JSON.stringify(lightweightData));
-            console.log(`💾 Fallback lightweight test code saved: ${testCode}`);
-        } catch (storageError) {
-            console.warn('Fallback storage also failed:', storageError);
-        }
-        return { testCode, cloudSaved: false };
-    }
-}
+// Firebase完全版では不要（削除済み）
+// 従来のgenerateShareUrl関数は saveQuestions で直接 Firebase 保存を行うため削除
 
 // 短いID生成
 function generateShortId() {
@@ -1667,18 +1575,21 @@ function showExistingTestCodes() {
     }
 }
 
-// 保存された問題データを読み込み
+// 保存された問題データを読み込み（Firebase優先版）
 async function loadSavedQuestions() {
     try {
-        // まずURLパラメータからデータを読み込み
+        console.log('🔥 Firebase優先でデータ読み込み開始...');
+        
+        // 1. URLパラメータからデータを読み込み
         const urlLoaded = loadQuestionsFromUrl();
         
         if (!urlLoaded) {
-            // URLデータがない場合はサーバーから読み込み
-            await loadQuestionsFromServer();
+            // 2. URLデータがない場合はFirebaseから読み込み
+            const firebaseLoaded = await loadQuestionsFromFirebase();
             
-            // サーバーデータもない場合はローカルストレージから読み込み
-            if (questions.length === 0) {
+            if (!firebaseLoaded) {
+                // 3. Firebaseデータもない場合はローカルキャッシュから読み込み
+                console.log('Firebase데이터 없음, 로컬 캐시에서 읽기 시도...');
                 loadQuestionsFromLocalStorage();
             }
         }
@@ -1689,6 +1600,65 @@ async function loadSavedQuestions() {
         // エラーの場合はローカルストレージから読み込み
         loadQuestionsFromLocalStorage();
         updateTestStatus();
+    }
+}
+
+// Firebaseからデータを読み込み（新規追加）
+async function loadQuestionsFromFirebase() {
+    try {
+        if (!db) {
+            console.log('Firebase not available');
+            return false;
+        }
+        
+        // アクティブなテストコードを取得
+        const activeTestCode = localStorage.getItem('physicsQuizActiveTestCode');
+        if (!activeTestCode) {
+            console.log('No active test code found');
+            return false;
+        }
+        
+        console.log(`🔥 Firebaseからデータ読み込み: ${activeTestCode}`);
+        
+        const doc = await db.collection('testCodes').doc(activeTestCode).get();
+        if (doc.exists) {
+            const data = doc.data();
+            console.log('✅ Firebase读取成功:', data);
+            
+            // 期限チェック
+            if (data.expiresAt && new Date(data.expiresAt) < new Date()) {
+                console.warn('Test data has expired');
+                return false;
+            }
+            
+            questions = data.questions || [];
+            answerExamples = data.answerExamples || [];
+            testEnabled = data.testEnabled || false;
+            
+            console.log(`📚 Questions loaded from Firebase: ${questions.length}`);
+            console.log(`📝 Answer examples loaded from Firebase: ${answerExamples.length}`);
+            
+            // 管理画面の場合は表示を更新
+            if (document.getElementById('questionList')) {
+                renderQuestionList();
+            }
+            if (currentScreen === 'admin' || document.getElementById('adminScreen').style.display === 'block') {
+                renderAnswerExampleList();
+            }
+            
+            // ローカルストレージにキャッシュ
+            localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
+            localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
+            localStorage.setItem('physicsQuizEnabled', testEnabled.toString());
+            
+            return true;
+        } else {
+            console.log('Test code not found in Firebase');
+            return false;
+        }
+    } catch (error) {
+        console.warn('Firebase読み込みエラー:', error);
+        return false;
     }
 }
 
