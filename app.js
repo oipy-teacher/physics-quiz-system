@@ -80,8 +80,15 @@ function initFirebase() {
             // 🔥 Firestore データベースを初期化
             db = firebase.firestore();
             
-            // Firebaseネットワーク設定（シンプル化）
-            // disableNetwork/enableNetworkの繰り返しが400エラーの原因なので削除
+            // オフラインキャッシュを有効化（ネットワークエラーを減らす）
+            db.enablePersistence({ synchronizeTabs: true })
+                .catch((err) => {
+                    if (err.code === 'failed-precondition') {
+                        console.log('Firebase persistence failed: Multiple tabs open');
+                    } else if (err.code === 'unimplemented') {
+                        console.log('Firebase persistence not available');
+                    }
+                });
             
             isFirebaseAvailable = true;
             console.log('🔥 Firebase & Firestore initialized successfully');
@@ -881,25 +888,11 @@ async function saveQuestions() {
     // 成功メッセージ表示
     showAdminSuccess(`✅ 問題設定完了！テストコード: ${testCode}\n📱 QRコードで配信可能です\n💡 学生回答はFirebase Storageに自動保存されます`);
     
+    // 教員側はFirebaseに送信しない（ローカルのみ）
+    console.log('📚 教員側: Firebase送信スキップ（ローカル動作のみ）');
+    
     // QRコード生成オプションを表示
     showShareOptions(dataToSave, { testCode: testCode, cloudSaved: false });
-    
-    // テストコードの存在をFirebaseに登録（クロスデバイス対応の準備）
-    if (isFirebaseAvailable && db) {
-        console.log('📝 テストコード登録をFirebaseに保存中...');
-        db.collection('testCodes').doc(testCode).set({
-            exists: true,
-            created: new Date().toISOString(),
-            teacherId: dataToSave.teacherId,
-            questionCount: questions.length,
-            // データ本体は生徒初回アクセス時に保存
-            dataWillBeSavedOnFirstAccess: true
-        }).then(() => {
-            console.log('✅ テストコード登録完了:', testCode);
-        }).catch((error) => {
-            console.warn('テストコード登録失敗:', error);
-        });
-    }
     
     updateTestStatus();
 }
@@ -917,68 +910,9 @@ function generateShortId() {
     return result;
 }
 
-// QR生成直前の容量確保（スマート削除）
-function ensureStorageSpaceForQR(newData) {
-    try {
-        // 新しいデータのサイズを推定
-        const newDataSize = JSON.stringify(newData).length;
-        const currentUsage = getCurrentStorageUsage();
-        const estimatedTotal = currentUsage + newDataSize;
-        
-        console.log(`📊 容量確認: 現在${Math.round(currentUsage/1024)}KB + 新規${Math.round(newDataSize/1024)}KB = 推定${Math.round(estimatedTotal/1024)}KB`);
-        
-        // 8MB制限を超える場合のみ古いデータを削除
-        if (estimatedTotal > 8 * 1024 * 1024) {
-            console.log('🚨 容量不足が予想されるため、古いデータを削除します');
-            
-            // 古いテストコードを取得
-            const testCodes = Object.keys(localStorage)
-                .filter(key => key.startsWith('testCode_'))
-                .map(key => {
-                    const testCode = key.replace('testCode_', '');
-                    const data = localStorage.getItem(key);
-                    let created = null;
-                    try {
-                        const parsed = JSON.parse(data);
-                        created = new Date(parsed.created);
-                    } catch (e) {
-                        created = new Date(0); // 無効なデータは古い扱い
-                    }
-                    return { key, testCode, created, size: data.length };
-                })
-                .sort((a, b) => a.created - b.created); // 古い順にソート
-            
-            // 容量が十分になるまで古いデータを削除
-            let freedSpace = 0;
-            for (const codeData of testCodes) {
-                if (estimatedTotal - freedSpace <= 7 * 1024 * 1024) {
-                    break; // 7MB以下になったら停止
-                }
-                
-                localStorage.removeItem(codeData.key);
-                freedSpace += codeData.size;
-                console.log(`🗑️ 古いテストコード削除: ${codeData.testCode} (${Math.round(codeData.size/1024)}KB解放)`);
-            }
-            
-            console.log(`✅ 容量確保完了: ${Math.round(freedSpace/1024)}KB解放`);
-        } else {
-            console.log('✅ 容量に問題なし、削除不要');
-        }
-    } catch (error) {
-        console.warn('容量確保処理でエラー:', error);
-    }
-}
 
-// 現在のストレージ使用量を取得
-function getCurrentStorageUsage() {
-    let totalSize = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        const value = localStorage.getItem(key);
-        totalSize += key.length + value.length;
-    }
-    return totalSize;
-}
+
+
 
 // テストデータをFirebaseに保存（クロスデバイス対応）
 async function saveTestDataToFirebase(testCode, testData) {
@@ -1020,46 +954,7 @@ async function saveTestDataToFirebase(testCode, testData) {
     }
 }
 
-// 既存のテストコードをチェック
-function checkExistingTestCode(dataToSave) {
-    // ローカルストレージから既存のテストコードを検索
-    const existingCodes = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('testCode_')) {
-            const testCode = key.replace('testCode_', '');
-            const data = localStorage.getItem(key);
-            if (data) {
-                try {
-                    const parsedData = JSON.parse(data);
-                    // 有効なテストデータかチェック
-                    if (parsedData.questions || parsedData.cloudSaved) {
-                        existingCodes.push({
-                            testCode: testCode,
-                            data: parsedData,
-                            hasCloud: !!parsedData.cloudSaved
-                        });
-                    }
-                } catch (e) {
-                    console.error('Invalid test code data:', key);
-                }
-            }
-        }
-    }
-    
-    if (existingCodes.length > 0) {
-        // 既存のコードがある場合は選択肢を表示
-        showTestCodeOptions(dataToSave, existingCodes);
-            } else {
-            // 既存のコードがない場合は新規作成
-            generateShareUrl(dataToSave).then(shareResult => {
-                showShareOptions(dataToSave, shareResult);
-            }).catch(error => {
-                console.error('Share generation error:', error);
-                showShareOptions(dataToSave, { testCode: generateShortId(), cloudSaved: false });
-            });
-        }
-}
+
 
 // テストコード選択肢を表示
 function showTestCodeOptions(dataToSave, existingCodes) {
@@ -1155,12 +1050,15 @@ function useExistingTestCode(testCode, dataToSave) {
 function createNewTestCode(dataToSave) {
     closeTestCodeModal();
     
-    generateShareUrl(dataToSave).then(shareResult => {
-        showShareOptions(dataToSave, shareResult);
-    }).catch(error => {
-        console.error('Share generation error:', error);
-        showShareOptions(dataToSave, { testCode: generateShortId(), cloudSaved: false });
-    });
+    const newTestCode = generateShortId();
+    localStorage.setItem(`testCode_${newTestCode}`, JSON.stringify({
+        ...dataToSave,
+        testCode: newTestCode,
+        created: new Date().toISOString(),
+        cloudSaved: false
+    }));
+    
+    showShareOptions(dataToSave, { testCode: newTestCode, cloudSaved: false });
 }
 
 // データを更新（シンプルなローカル保存）
@@ -1646,7 +1544,7 @@ async function loadSavedQuestions() {
             
             if (!firebaseLoaded) {
                 // 3. Firebaseデータもない場合はローカルキャッシュから読み込み
-                console.log('Firebase데이터 없음, 로컬 캐시에서 읽기 시도...');
+
                 loadQuestionsFromLocalStorage();
             }
         }
@@ -1883,37 +1781,7 @@ async function loadQuestionsFromUrl() {
     return false;
 }
 
-// サーバーからデータを読み込み
-async function loadQuestionsFromServer() {
-    try {
-        const response = await fetch('./data.json');
-        if (response.ok) {
-            const data = await response.json();
-            
-            if (data.questions && data.questions.length > 0) {
-                questions = data.questions;
-                answerExamples = data.answerExamples || [];
-                testEnabled = data.testEnabled || false;
-                
-                console.log('Questions loaded from server:', questions.length);
-                
-                // 管理画面の場合は表示を更新
-                if (document.getElementById('questionList')) {
-                    renderQuestionList();
-                }
-                // 解答例リストは管理画面が表示されている場合のみ更新
-                if (currentScreen === 'admin' || document.getElementById('adminScreen').style.display === 'block') {
-                    renderAnswerExampleList();
-                }
-                
-                return true;
-            }
-        }
-    } catch (error) {
-        console.log('Server data not available, falling back to localStorage');
-    }
-    return false;
-}
+
 
 // ローカルストレージからデータを読み込み
 function loadQuestionsFromLocalStorage() {
@@ -3478,44 +3346,14 @@ function emergencyCleanStorage() {
 
 // ページ読み込み完了時の初期化
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('Physics Quiz System initialized - Version 2.3 (Optimized storage)');
+    console.log('Physics Quiz System initialized - Version 2.4 (Production Ready)');
     
-    // 🧹 ストレージ容量管理（軽量版 - 初回のみ）
+    // ストレージ容量管理（初回のみ）
     try {
         checkStorageQuota();
     } catch (error) {
         console.error('Storage check failed:', error);
     }
-    
-    // 管理画面の初期化
-    setupDragAndDrop();
-    await loadSavedQuestions();
-    updateTestStatus();
-    setupViolationDetection();
-    
-    // キャンバス初期化（テスト画面表示時に実行）
-    const testScreen = document.getElementById('testScreen');
-    if (testScreen) {
-        const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
-                    const target = mutation.target;
-                    if (target.id === 'testScreen' && target.style.display !== 'none') {
-                        // テスト画面が表示されたときにキャンバスを初期化
-                        setTimeout(initCanvas, 100);
-                    }
-                }
-            });
-        });
-        
-        observer.observe(testScreen, {
-            attributes: true,
-            attributeFilter: ['style']
-        });
-    }
-    
-    // 初期画面設定
-    showScreen('login');
 });
 
 
