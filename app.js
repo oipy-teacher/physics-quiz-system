@@ -574,13 +574,12 @@ function addQuestion(imageData) {
     const question = {
         id: questionId,
         number: questions.length + 1,
-        image: imageData,
-        patterns: []
+        image: imageData
     };
 
     questions.push(question);
     renderQuestionList();
-    showAdminSuccess('問題を追加しました。正解パターンを設定してください。');
+    showAdminSuccess('問題を追加しました。');
 }
 
 // 解答例追加
@@ -653,17 +652,8 @@ function renderQuestionList() {
             <div class="question-number">${question.number}</div>
             <div class="question-content">
                 <img src="${question.image}" class="question-image" alt="問題${question.number}">
-                <div class="answer-patterns">
-                    <h3>正解パターン（複数設定可能）</h3>
-                    <div class="pattern-input-group">
-                        <input type="text" class="pattern-input" id="patternInput_${question.id}" 
-                               placeholder="例: 6N, 6, 6ニュートン" 
-                               onkeypress="handlePatternKeyPress(event, '${question.id}')">
-                        <button class="add-pattern-button" onclick="addPattern('${question.id}')">追加</button>
-                    </div>
-                    <div class="pattern-list" id="patterns_${question.id}">
-                        ${renderPatterns(question)}
-                    </div>
+                <div class="question-info">
+                    <p style="color: #666; margin: 10px 0;">採点は別システムで行います</p>
                 </div>
                 <button onclick="removeQuestion(${index})" style="background-color: #ff3b30; color: white; padding: 10px; border: none; border-radius: 8px; margin-top: 10px;">この問題を削除</button>
             </div>
@@ -672,94 +662,7 @@ function renderQuestionList() {
     });
 }
 
-// 正解パターン表示
-function renderPatterns(question) {
-    if (!question.patterns || question.patterns.length === 0) {
-        return '<span style="color: #999;">正解パターンが設定されていません</span>';
-    }
-
-    return question.patterns.map((pattern, index) => `
-        <div class="pattern-tag">
-            <span>${pattern}</span>
-            <button onclick="removePattern('${question.id}', ${index})" title="削除">×</button>
-        </div>
-    `).join('');
-}
-
-// Enterキー押下時の処理
-function handlePatternKeyPress(event, questionId) {
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        addPattern(questionId);
-    }
-}
-
-// 正解パターン追加
-function addPattern(questionId) {
-    const input = document.getElementById(`patternInput_${questionId}`);
-    if (!input) {
-        console.error('Input element not found:', `patternInput_${questionId}`);
-        return;
-    }
-    
-    const pattern = input.value.trim();
-    
-    if (pattern === '') {
-        showAdminError('正解パターンを入力してください。');
-        return;
-    }
-
-    const question = questions.find(q => q.id === questionId);
-    if (!question) {
-        console.error('Question not found:', questionId);
-        return;
-    }
-    
-    // 重複チェック
-    if (question.patterns.includes(pattern)) {
-        showAdminError('同じパターンが既に登録されています。');
-        return;
-    }
-    
-    // パターンを追加
-    question.patterns.push(pattern);
-    input.value = '';
-    
-    // 表示を更新
-    updatePatternDisplay(questionId, question);
-    
-    showAdminSuccess(`正解パターン「${pattern}」を追加しました。`);
-}
-
-// 正解パターン削除
-function removePattern(questionId, patternIndex) {
-    const question = questions.find(q => q.id === questionId);
-    if (!question) {
-        console.error('Question not found:', questionId);
-        return;
-    }
-    
-    if (patternIndex < 0 || patternIndex >= question.patterns.length) {
-        console.error('Invalid pattern index:', patternIndex);
-        return;
-    }
-    
-    const removedPattern = question.patterns[patternIndex];
-    question.patterns.splice(patternIndex, 1);
-    
-    // 表示を更新
-    updatePatternDisplay(questionId, question);
-    
-    showAdminSuccess(`正解パターン「${removedPattern}」を削除しました。`);
-}
-
-// パターン表示のみを更新（全体を再描画しない）
-function updatePatternDisplay(questionId, question) {
-    const patternContainer = document.getElementById(`patterns_${questionId}`);
-    if (patternContainer) {
-        patternContainer.innerHTML = renderPatterns(question);
-    }
-}
+// 正解パターン機能は採点システムに移行済み
 
 // 問題削除
 function removeQuestion(index) {
@@ -792,12 +695,7 @@ async function saveQuestions() {
         return;
     }
 
-    // 全ての問題に正解パターンが設定されているかチェック
-    const incompleteQuestions = questions.filter(q => !q.patterns || q.patterns.length === 0);
-    if (incompleteQuestions.length > 0) {
-        showAdminError(`問題${incompleteQuestions.map(q => q.number).join(', ')}に正解パターンが設定されていません。`);
-        return;
-    }
+    // 正解パターンのチェックは採点システムで実施
 
     // データを準備
     const dataToSave = {
