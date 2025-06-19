@@ -1317,10 +1317,7 @@ function generateQRCode(testCode) {
             console.log('Parsed test data keys:', Object.keys(parsedData));
             
             // 【シンプル方式】テストコード方式を優先（短URL）
-            // 授業中限定: ローカルIPアドレスを使用
-            const currentUrl = window.location.href;
-            const baseUrl = currentUrl.split('?')[0]; // パラメータを除去
-            targetUrl = `${baseUrl}?code=${testCode}`;
+            targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
             urlType = 'code';
             console.log('Using test code URL (short and clean)');
             
@@ -1329,16 +1326,12 @@ function generateQRCode(testCode) {
         } catch (e) {
             console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
-            const currentUrl = window.location.href;
-            const baseUrl = currentUrl.split('?')[0];
-            targetUrl = `${baseUrl}?code=${testCode}`;
+            targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
             urlType = 'code';
         }
     } else {
         // データが見つからない場合はテストコード方式
-        const currentUrl = window.location.href;
-        const baseUrl = currentUrl.split('?')[0];
-        targetUrl = `${baseUrl}?code=${testCode}`;
+        targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
         urlType = 'code';
         console.log('No test data found, using test code URL');
     }
@@ -1691,8 +1684,11 @@ async function loadQuestionsFromUrl() {
                     data = JSON.parse(testData);
                     console.log('Data loaded from localStorage (same device):', data);
                     
-                    // 授業中限定モード: Firebase保存をスキップ
-                    console.log('📚 授業中限定モード: ローカルネットワーク内での使用');
+                    // 生徒アクセス時に初めてFirebaseに保存（クロスデバイス対応）
+                    if (isFirebaseAvailable && db && data.questions && data.questions.length > 0) {
+                        console.log('🚀 生徒アクセス検出: Firebaseに初回保存中...');
+                        saveTestDataToFirebase(testCode, data);
+                    }
                 } else {
                     // ローカルストレージにもない場合
                     console.warn('Test code not found in both Firebase and localStorage:', testCode);
