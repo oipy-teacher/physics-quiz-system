@@ -3047,17 +3047,17 @@ function checkStorageQuota() {
         const shouldLog = !lastLogTime || (now - parseInt(lastLogTime)) > 60000;
         
         if (shouldLog) {
-            console.log(`📊 LocalStorage使用量: ${usedMB}MB / ~5MB制限`);
+            console.log(`📊 LocalStorage使用量: ${usedMB}MB / ~8MB推奨制限`);
             localStorage.setItem('lastStorageLog', now.toString());
         }
         
-        if (used > 4.5 * 1024 * 1024) { // 4.5MB以上で緊急クリーニング（制限を緩和）
+        if (used > 7 * 1024 * 1024) { // 7MB以上で緊急クリーニング（制限を大幅緩和）
             if (shouldLog) {
                 console.warn(`🚨 Storage capacity critical (${usedMB}MB), performing emergency cleanup...`);
             }
             emergencyCleanStorage();
             return false; // クリーニング後は再チェックが必要
-        } else if (used > 3 * 1024 * 1024) { // 3MB以上で警告
+        } else if (used > 5 * 1024 * 1024) { // 5MB以上で警告
             if (shouldLog) {
                 console.warn(`⚠️ Storage使用量注意: ${usedMB}MB`);
             }
