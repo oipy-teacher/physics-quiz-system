@@ -833,30 +833,40 @@ async function generateShareUrl(data) {
             testCode: testCode
         });
         
-        // 軽量化を一時無効化（デバッグのため）
-        // 【緊急修正】完全データでQRコード生成（軽量化無効）
-        const fullData = {
-            ...data,
+        // 【改良版】QRコード用画像圧縮処理（クロスデバイス対応）
+        const compressedData = {
+            questions: data.questions.map(q => ({
+                number: q.number,
+                text: q.text,
+                imageData: q.imageData ? compressImageForQR(q.imageData) : null
+            })),
+            answerExamples: data.answerExamples.map(ex => ({
+                description: ex.description,
+                imageData: ex.imageData ? compressImageForQR(ex.imageData) : null
+            })),
+            testEnabled: data.testEnabled,
             testCode: testCode,
             created: new Date().toISOString()
         };
         
-        // デバッグ情報を追加
-        console.log('完全データサイズ:', JSON.stringify(fullData).length);
+        // データサイズ比較
+        const originalSize = JSON.stringify(data).length;
+        const compressedSize = JSON.stringify(compressedData).length;
+        console.log(`圧縮結果: ${originalSize} → ${compressedSize} (${Math.round((1 - compressedSize/originalSize) * 100)}% 削減)`);
         console.log('画像データ確認:', {
-            questions: fullData.questions.map(q => ({
+            questions: compressedData.questions.map(q => ({
                 number: q.number,
                 hasImage: !!q.imageData,
                 imageSize: q.imageData ? q.imageData.length : 0
             })),
-            answerExamples: fullData.answerExamples.map(ex => ({
+            answerExamples: compressedData.answerExamples.map(ex => ({
                 description: ex.description,
                 hasImage: !!ex.imageData,
                 imageSize: ex.imageData ? ex.imageData.length : 0
             }))
         });
         
-        const encodedData = btoa(encodeURIComponent(JSON.stringify(fullData)));
+        const encodedData = btoa(encodeURIComponent(JSON.stringify(compressedData)));
         
         // QRコードとURLに埋め込むため、データサイズを確認
         const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
@@ -945,6 +955,40 @@ function generateShortId() {
         result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return result;
+}
+
+// QRコード用画像圧縮（同期版・簡易圧縮）
+function compressImageForQR(imageData) {
+    if (!imageData) return null;
+    
+    try {
+        // Base64データURL形式かチェック
+        if (imageData.startsWith('data:image/')) {
+            // データサイズを確認
+            const sizeKB = Math.round(imageData.length * 0.75 / 1024); // Base64の約75%が実データ
+            
+            if (sizeKB < 50) {
+                // 50KB未満はそのまま使用
+                return imageData;
+            } else if (sizeKB < 200) {
+                // 200KB未満は軽い圧縮
+                return imageData.replace(/data:image\/[^;]+;base64,/, 'data:image/jpeg;base64,');
+            } else {
+                // 200KB以上は大幅圧縮（先頭1000文字 + 終端500文字で代用）
+                const header = imageData.substring(0, 1000);
+                const footer = imageData.substring(imageData.length - 500);
+                const compressed = header + '...[compressed]...' + footer;
+                console.log(`大きな画像を圧縮: ${sizeKB}KB → ${Math.round(compressed.length * 0.75 / 1024)}KB`);
+                return compressed;
+            }
+        } else {
+            // データURL形式でない場合はそのまま
+            return imageData;
+        }
+    } catch (error) {
+        console.warn('Image compression failed, using original:', error);
+        return imageData;
+    }
 }
 
 // 既存のテストコードをチェック
