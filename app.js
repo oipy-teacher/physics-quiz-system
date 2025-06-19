@@ -1377,32 +1377,26 @@ function generateQRCode(testCode) {
             const parsedData = JSON.parse(testData);
             console.log('Parsed test data keys:', Object.keys(parsedData));
             
-            // データ埋め込み方式を優先（クロスデバイス対応のため）
-            if (parsedData.dataUrl && parsedData.dataUrl.length < 2000) {
+            // 【クロスデバイス対応強化】データ埋め込み方式を優先使用
+            if (parsedData.dataUrl) {
                 targetUrl = parsedData.dataUrl;
                 urlType = 'data';
                 console.log('Using embedded data URL (cross-device compatible)');
             } else if (parsedData.questions && parsedData.questions.length > 0) {
-                // 完全データがある場合でも軽量版を試行
-                console.log('Checking if data can be embedded in QR...');
-                const lightweightData = {
+                // 完全データでクロスデバイス対応URL生成
+                console.log('Generating cross-device compatible data URL...');
+                const fullDataForQR = {
                     ...parsedData,
                     testCode: testCode,
                     created: parsedData.created
                 };
-                const encodedData = btoa(encodeURIComponent(JSON.stringify(lightweightData)));
+                const encodedData = btoa(encodeURIComponent(JSON.stringify(fullDataForQR)));
                 const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
                 
-                if (dataUrl.length < 2000) {
-                    targetUrl = dataUrl;
-                    urlType = 'data';
-                    console.log('Generated data URL for cross-device compatibility');
-                } else {
-                    console.warn(`Data URL too long (${dataUrl.length} chars), falling back to test code method`);
-                                         // テストコード方式にフォールバック
-                     targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
-                     urlType = 'code';
-                 }
+                // データサイズに関わらずデータ埋め込み方式を使用（クロスデバイス優先）
+                targetUrl = dataUrl;
+                urlType = 'data';
+                console.log(`Generated full data URL for cross-device compatibility (${dataUrl.length} chars)`);
              } else {
                  // 他にデータが利用できない場合のみテストコード方式
                  targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
@@ -1426,11 +1420,9 @@ function generateQRCode(testCode) {
     console.log('URL length:', targetUrl.length);
     console.log('URL type:', urlType);
     
-    // URLが長すぎる場合は強制的にテストコード方式
-    if (targetUrl.length > 2000) {
-        console.warn('URL still too long, forcing test code method');
-        targetUrl = `${window.location.origin}${window.location.pathname}?code=${testCode}`;
-        urlType = 'code';
+    // 【クロスデバイス優先】URL長さ制限を撤廃してデータ埋め込み方式を優先
+    if (targetUrl.length > 10000) {
+        console.warn(`Very large URL (${targetUrl.length} chars), but maintaining cross-device compatibility`);
     }
     
     // QRコード画像URLを生成
