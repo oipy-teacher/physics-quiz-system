@@ -40,14 +40,14 @@ let gradingResults = [];
 // 管理者パスワード（実際の運用では環境変数やサーバー側で管理）
 const ADMIN_PASSWORD = 'physics2024';
 
-// Firebase設定（無効化 - 正しいプロジェクト設定が必要）
+// Firebase設定（元の動作していた設定に復旧）
 const firebaseConfig = {
-    apiKey: "",  // 無効化：正しいFirebase設定が必要
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSyBvOj5SHvVfW-gKxu7sF8QvJJQYh4wFz_M",
+    authDomain: "physics-quiz-app.firebaseapp.com",
+    projectId: "physics-quiz-app",
+    storageBucket: "physics-quiz-app.appspot.com",
+    messagingSenderId: "96107265429",
+    appId: "1:96107265429:web:dbaa46b9d23629cbc18dc6"
 };
 
 // Firebase初期化
