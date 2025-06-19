@@ -53,6 +53,7 @@ const firebaseConfig = {
 // Firebase初期化
 let firebaseApp = null;
 let firebaseStorage = null;
+let db = null; // 🔥 Firestore データベース
 let isFirebaseAvailable = false;
 
 function initFirebase() {
@@ -67,8 +68,10 @@ function initFirebase() {
         if (typeof firebase !== 'undefined') {
             firebaseApp = firebase.initializeApp(firebaseConfig);
             firebaseStorage = firebase.storage();
+            // 🔥 Firestore データベースを初期化
+            db = firebase.firestore();
             isFirebaseAvailable = true;
-            console.log('Firebase initialized successfully');
+            console.log('🔥 Firebase & Firestore initialized successfully');
         } else {
             console.warn('Firebase SDK not loaded');
             isFirebaseAvailable = false;
@@ -794,12 +797,12 @@ async function saveQuestions() {
     }
 
     // Firebase初期化を待つ
-    if (!window.firebase || !window.db) {
+    if (!db) {
         console.log('🔥 Firebase初期化待ち...');
         // 最大3秒待機
         for (let i = 0; i < 30; i++) {
             await new Promise(resolve => setTimeout(resolve, 100));
-            if (window.firebase && window.db) {
+            if (db) {
                 console.log('✅ Firebase初期化完了');
                 break;
             }
@@ -1620,12 +1623,12 @@ async function loadSavedQuestions() {
 async function loadQuestionsFromFirebase() {
     try {
         // Firebase初期化を待つ
-        if (!window.firebase || !window.db) {
+        if (!db) {
             console.log('🔥 Firebase初期化待ち...');
             // 最大3秒待機
             for (let i = 0; i < 30; i++) {
                 await new Promise(resolve => setTimeout(resolve, 100));
-                if (window.firebase && window.db) {
+                if (db) {
                     console.log('✅ Firebase初期化完了');
                     break;
                 }
