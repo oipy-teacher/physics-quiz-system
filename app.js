@@ -2961,14 +2961,27 @@ function checkStorageQuota() {
     try {
         const used = JSON.stringify(localStorage).length;
         const usedMB = (used / (1024 * 1024)).toFixed(2);
-        console.log(`📊 LocalStorage使用量: ${usedMB}MB / ~5MB制限`);
+        
+        // ログ出力を制限（1分に1回のみ）
+        const lastLogTime = localStorage.getItem('lastStorageLog');
+        const now = Date.now();
+        const shouldLog = !lastLogTime || (now - parseInt(lastLogTime)) > 60000;
+        
+        if (shouldLog) {
+            console.log(`📊 LocalStorage使用量: ${usedMB}MB / ~5MB制限`);
+            localStorage.setItem('lastStorageLog', now.toString());
+        }
         
         if (used > 3.5 * 1024 * 1024) { // 3.5MB以上で自動クリーニング
-            console.warn(`🧹 Storage capacity high (${usedMB}MB), performing automatic cleanup...`);
+            if (shouldLog) {
+                console.warn(`🧹 Storage capacity high (${usedMB}MB), performing automatic cleanup...`);
+            }
             emergencyCleanStorage();
             return false; // クリーニング後は再チェックが必要
         } else if (used > 3 * 1024 * 1024) { // 3MB以上で警告
-            console.warn(`⚠️ Storage使用量注意: ${usedMB}MB`);
+            if (shouldLog) {
+                console.warn(`⚠️ Storage使用量注意: ${usedMB}MB`);
+            }
         }
         return true;
     } catch (error) {
@@ -2984,9 +2997,12 @@ function clearOldTestDataAutomatically() {
     let deletedCount = 0;
     const keysToDelete = [];
     
+    // 現在のテストコードを安全に取得
+    const currentCode = getCurrentTestCode();
+    
     // 古いテストコードを全て削除（現在のもの以外）
     Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('testCode_') && key !== `testCode_${getCurrentTestCode()}`) {
+        if (key.startsWith('testCode_') && currentCode && key !== `testCode_${currentCode}`) {
             keysToDelete.push(key);
         }
         
@@ -3003,9 +3019,13 @@ function clearOldTestDataAutomatically() {
     
     // 削除実行
     keysToDelete.forEach(key => {
-        localStorage.removeItem(key);
-        deletedCount++;
-        console.log(`🗑️ Auto-deleted: ${key}`);
+        try {
+            localStorage.removeItem(key);
+            deletedCount++;
+            console.log(`🗑️ Auto-deleted: ${key}`);
+        } catch (error) {
+            console.error(`Failed to delete ${key}:`, error);
+        }
     });
     
     if (deletedCount > 0) {
@@ -3016,24 +3036,37 @@ function clearOldTestDataAutomatically() {
 
 // 現在のテストコードを取得
 function getCurrentTestCode() {
-    // 最新のテストコードを取得
-    const testCodes = Object.keys(localStorage)
-        .filter(key => key.startsWith('testCode_'))
-        .map(key => {
-            try {
-                const data = JSON.parse(localStorage.getItem(key));
-                return {
-                    code: key.replace('testCode_', ''),
-                    created: new Date(data.created || data.lastUpdated || 0)
-                };
-            } catch {
-                return null;
+    try {
+        // 最新のテストコードを取得
+        const testCodes = [];
+        
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('testCode_')) {
+                try {
+                    const data = localStorage.getItem(key);
+                    if (data) {
+                        const parsedData = JSON.parse(data);
+                        testCodes.push({
+                            code: key.replace('testCode_', ''),
+                            created: new Date(parsedData.created || parsedData.lastUpdated || 0)
+                        });
+                    }
+                } catch (error) {
+                    // 破損したデータは無視
+                    console.warn(`Skipping corrupted test code: ${key}`);
+                }
             }
-        })
-        .filter(Boolean)
-        .sort((a, b) => b.created - a.created);
-    
-    return testCodes.length > 0 ? testCodes[0].code : null;
+        }
+        
+        // 日付順でソート（新しい順）
+        testCodes.sort((a, b) => b.created - a.created);
+        
+        return testCodes.length > 0 ? testCodes[0].code : null;
+    } catch (error) {
+        console.error('Error getting current test code:', error);
+        return null;
+    }
 }
 
 function emergencyCleanStorage() {
@@ -3043,31 +3076,56 @@ function emergencyCleanStorage() {
     
     console.log('🧹 緊急ストレージクリーニング開始...');
     
-    Object.keys(localStorage).forEach(key => {
-        const itemSize = localStorage.getItem(key).length;
-        let shouldDelete = false;
-        
+    // 安全にキー一覧を取得
+    const keys = [];
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key) keys.push(key);
+        }
+    } catch (error) {
+        console.error('Error getting localStorage keys:', error);
+        return;
+    }
+    
+    keys.forEach(key => {
         try {
+            const item = localStorage.getItem(key);
+            if (!item) return;
+            
+            const itemSize = item.length;
+            let shouldDelete = false;
+            
             // 古いテストコードを削除
             if (key.startsWith('testCode_')) {
-                const data = JSON.parse(localStorage.getItem(key));
-                const lastUpdated = new Date(data.lastUpdated || 0);
-                
-                if (lastUpdated < sevenDaysAgo) {
+                try {
+                    const data = JSON.parse(item);
+                    const lastUpdated = new Date(data.lastUpdated || 0);
+                    
+                    if (lastUpdated < sevenDaysAgo) {
+                        shouldDelete = true;
+                    }
+                } catch (error) {
+                    // JSON解析エラー = 破損データなので削除
                     shouldDelete = true;
                 }
             }
             
             // 古い学生データを削除
             if (key.startsWith('submissions_') || key.startsWith('answers_')) {
-                const data = JSON.parse(localStorage.getItem(key));
-                if (data.timestamp) {
-                    const submissionDate = new Date(data.timestamp);
-                    if (submissionDate < sevenDaysAgo) {
+                try {
+                    const data = JSON.parse(item);
+                    if (data.timestamp) {
+                        const submissionDate = new Date(data.timestamp);
+                        if (submissionDate < sevenDaysAgo) {
+                            shouldDelete = true;
+                        }
+                    } else {
+                        // タイムスタンプがないデータは削除
                         shouldDelete = true;
                     }
-        } else {
-                    // タイムスタンプがないデータは削除
+                } catch (error) {
+                    // JSON解析エラー = 破損データなので削除
                     shouldDelete = true;
                 }
             }
@@ -3078,19 +3136,22 @@ function emergencyCleanStorage() {
                 if (key.startsWith('testCode_') || key.startsWith('submissions_')) {
                     shouldDelete = true;
                 }
-        }
-        
-    } catch (error) {
-            // JSON解析エラー = 破損データなので削除
-            shouldDelete = true;
-            console.log(`Corrupted data detected: ${key}`);
-        }
-        
-        if (shouldDelete) {
-            localStorage.removeItem(key);
-            deletedCount++;
-            deletedSizeMB += itemSize / (1024 * 1024);
-            console.log(`🗑️ Deleted: ${key}`);
+            }
+            
+            // ログ管理用の一時データ
+            if (key === 'lastStorageLog') {
+                // このキーは残す
+                return;
+            }
+            
+            if (shouldDelete) {
+                localStorage.removeItem(key);
+                deletedCount++;
+                deletedSizeMB += itemSize / (1024 * 1024);
+                console.log(`🗑️ Deleted: ${key}`);
+            }
+        } catch (error) {
+            console.error(`Error processing key ${key}:`, error);
         }
     });
     
@@ -3112,11 +3173,13 @@ function emergencyCleanStorage() {
 
 // ページ読み込み完了時の初期化
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('Physics Quiz System initialized - Version 2.2 (Auto-cleanup)');
+    console.log('Physics Quiz System initialized - Version 2.3 (Optimized storage)');
     
-    // 🧹 ストレージ容量管理（改善版）
-    if (!checkStorageQuota()) {
-        console.warn('Storage quota high, monitoring...');
+    // 🧹 ストレージ容量管理（軽量版 - 初回のみ）
+    try {
+        checkStorageQuota();
+    } catch (error) {
+        console.error('Storage check failed:', error);
     }
     
     // 管理画面の初期化
