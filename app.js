@@ -40,14 +40,14 @@ let gradingResults = [];
 // 管理者パスワード（実際の運用では環境変数やサーバー側で管理）
 const ADMIN_PASSWORD = 'physics2024';
 
-// Firebase設定（一時的に無効化）
+// Firebase設定（クロスデバイス対応のため有効化）
 const firebaseConfig = {
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSyBvOj5SHvVfW-gKxu7sF8QvJJQYh4wFz_M",
+    authDomain: "physics-quiz-app.firebaseapp.com",
+    projectId: "physics-quiz-app",
+    storageBucket: "physics-quiz-app.appspot.com",
+    messagingSenderId: "96107265429",
+    appId: "1:96107265429:web:dbaa46b9d23629cbc18dc6"
 };
 
 // Firebase初期化
@@ -67,12 +67,33 @@ function initFirebase() {
         
         if (typeof firebase !== 'undefined') {
             console.log('🔥 Firebase初期化を開始...');
-            firebaseApp = firebase.initializeApp(firebaseConfig);
+            
+            // 重複初期化チェック
+            if (firebase.apps.length === 0) {
+                firebaseApp = firebase.initializeApp(firebaseConfig);
+            } else {
+                firebaseApp = firebase.app();
+                console.log('🔥 Firebase app already initialized, reusing...');
+            }
+            
             firebaseStorage = firebase.storage();
             // 🔥 Firestore データベースを初期化
             db = firebase.firestore();
             
-            // Firebase設定をテスト（簡素化）
+            // オフライン永続化を無効化（エラー回避）
+            try {
+                db.disableNetwork().then(() => {
+                    return db.enableNetwork();
+                }).then(() => {
+                    console.log('🔥 Firebase network enabled successfully');
+                }).catch((networkError) => {
+                    console.warn('Firebase network setup warning:', networkError);
+                    // ネットワークエラーでも継続
+                });
+            } catch (networkSetupError) {
+                console.warn('Firebase network setup failed:', networkSetupError);
+            }
+            
             isFirebaseAvailable = true;
             console.log('🔥 Firebase & Firestore initialized successfully');
         } else {
@@ -963,12 +984,19 @@ async function saveTestDataToFirebase(testCode, testData) {
         
         console.log(`☁️ Firebaseにテストデータを保存中: ${testCode}`);
         
-        const docRef = await db.collection('testCodes').doc(testCode).set({
+        // タイムアウト付きでFirebase保存
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Firebase save timeout')), 15000)
+        );
+        
+        const savePromise = db.collection('testCodes').doc(testCode).set({
             ...testData,
             testCode: testCode,
             updatedAt: new Date().toISOString(),
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7日後に期限切れ
         });
+        
+        await Promise.race([savePromise, timeoutPromise]);
         
         console.log(`✅ Firebaseに保存成功: ${testCode}`);
         
@@ -1421,11 +1449,11 @@ function generateQRCode(testCode) {
             urlType = 'code';
             console.log('Using test code URL (short and clean)');
             
-            // クロスデバイス対応のためFirebaseにもデータを保存（一時的に無効化）
-            // if (parsedData.questions && parsedData.questions.length > 0) {
-            //     saveTestDataToFirebase(testCode, parsedData);
-            // }
-            console.log('☁️ Firebase保存は一時的に無効化されています（安定性確保のため）');
+            // 🚀 クロスデバイス対応のためFirebaseにデータを保存
+            if (parsedData.questions && parsedData.questions.length > 0) {
+                console.log('☁️ Firebaseにテストデータを保存中:', testCode);
+                saveTestDataToFirebase(testCode, parsedData);
+            }
         } catch (e) {
             console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
@@ -1659,7 +1687,16 @@ async function loadQuestionsFromFirebase() {
         
         console.log(`🔥 Firebaseからデータ読み込み: ${activeTestCode}`);
         
-        const doc = await db.collection('testCodes').doc(activeTestCode).get();
+        // タイムアウト付きでFirebase読み込み
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Firebase read timeout')), 10000)
+        );
+        
+        const doc = await Promise.race([
+            db.collection('testCodes').doc(activeTestCode).get(),
+            timeoutPromise
+        ]);
+        
         if (doc.exists) {
             const data = doc.data();
             console.log('✅ Firebase读取成功:', data);
@@ -1745,7 +1782,17 @@ async function loadQuestionsFromUrl() {
             if (isFirebaseAvailable && db) {
                 try {
                     console.log('🔥 Firebaseからテストコードを読み込み中:', testCode);
-                    const doc = await db.collection('testCodes').doc(testCode).get();
+                    
+                    // タイムアウト付きでFirebase読み込み
+                    const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Firebase read timeout')), 8000)
+                    );
+                    
+                    const doc = await Promise.race([
+                        db.collection('testCodes').doc(testCode).get(),
+                        timeoutPromise
+                    ]);
+                    
                     if (doc.exists) {
                         data = doc.data();
                         console.log('✅ Firebase からテストコードを読み込み成功:', testCode);
@@ -2671,9 +2718,9 @@ async function saveSubmissionResult() {
             console.log('Offline mode - submissions after save:', savedSubmissions);
         }
         
-        // Firebase Storageに画像をアップロード（一時的に無効化）
+        // 🚀 Firebase Storageに画像をアップロード（クロスデバイス対応）
         let firebaseMessage = '';
-        if (false) { // isFirebaseAvailable を一時的に無効化
+        if (isFirebaseAvailable) {
             try {
                 await uploadImagesToFirebase(finalStudentId, finalTestCode, finalAnswers);
                 firebaseMessage = '\n\n✅ Firebase Storageに画像もアップロードしました！\n📱→🖥️ 教員は別デバイスからダウンロード可能';
@@ -2682,7 +2729,7 @@ async function saveSubmissionResult() {
                 firebaseMessage = '\n\n⚠️ Firebase Storageへのアップロードに失敗\nローカル保存は完了しています';
             }
         } else {
-            firebaseMessage = '\n\n📝 ローカルに保存しました\n（Firebase機能は一時的に無効化中）';
+            firebaseMessage = '\n\n📝 ローカルに保存しました\n⚙️ Firebase設定で教員への画像共有が可能\n詳細: FIREBASE_QUICK_SETUP.md参照';
         }
         
         alert(`🎉 提出完了！\n学籍番号: ${finalStudentId}${firebaseMessage}`);
