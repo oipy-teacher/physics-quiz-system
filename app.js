@@ -813,60 +813,31 @@ async function generateShareUrl(data) {
     try {
         const testCode = generateShortId();
         
-        // Pastebin APIを使用（無料・認証不要・確実）
-        const formData = new FormData();
-        formData.append('api_dev_key', 'YOUR_API_KEY'); // 実際は不要
-        formData.append('api_option', 'paste');
-        formData.append('api_paste_code', JSON.stringify({
-            ...data,
-            created: new Date().toISOString(),
-            testCode: testCode
-        }));
-        formData.append('api_paste_name', `physics-test-${testCode}`);
-        formData.append('api_paste_expire_date', '1M'); // 1ヶ月で期限切れ
-        formData.append('api_paste_private', '1'); // 非公開
-
-        // データをBase64エンコードしてURLに埋め込み（真のクロスデバイス対応）
-        const dataString = JSON.stringify({
-            ...data,
-            created: new Date().toISOString(),
-            testCode: testCode
-        });
+        // 【QR生成直前容量確保】必要に応じて古いデータを削除
+        ensureStorageSpaceForQR(data);
         
-        // 【改良版】QRコード用画像圧縮処理（クロスデバイス対応）
-        const compressedData = {
-            questions: data.questions.map(q => ({
-                number: q.number,
-                text: q.text,
-                imageData: q.imageData ? compressImageForQR(q.imageData) : null
-            })),
-            answerExamples: data.answerExamples.map(ex => ({
-                description: ex.description,
-                imageData: ex.imageData ? compressImageForQR(ex.imageData) : null
-            })),
-            testEnabled: data.testEnabled,
+        // 元の形式でQRコード用データ準備（圧縮なし）
+        const qrData = {
+            ...data,
             testCode: testCode,
             created: new Date().toISOString()
         };
         
-        // データサイズ比較
-        const originalSize = JSON.stringify(data).length;
-        const compressedSize = JSON.stringify(compressedData).length;
-        console.log(`圧縮結果: ${originalSize} → ${compressedSize} (${Math.round((1 - compressedSize/originalSize) * 100)}% 削減)`);
+        console.log('QRコード用データサイズ:', JSON.stringify(qrData).length);
         console.log('画像データ確認:', {
-            questions: compressedData.questions.map(q => ({
+            questions: qrData.questions.map(q => ({
                 number: q.number,
                 hasImage: !!q.imageData,
                 imageSize: q.imageData ? q.imageData.length : 0
             })),
-            answerExamples: compressedData.answerExamples.map(ex => ({
+            answerExamples: qrData.answerExamples.map(ex => ({
                 description: ex.description,
                 hasImage: !!ex.imageData,
                 imageSize: ex.imageData ? ex.imageData.length : 0
             }))
         });
         
-        const encodedData = btoa(encodeURIComponent(JSON.stringify(compressedData)));
+        const encodedData = btoa(encodeURIComponent(JSON.stringify(qrData)));
         
         // QRコードとURLに埋め込むため、データサイズを確認
         const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
@@ -957,38 +928,67 @@ function generateShortId() {
     return result;
 }
 
-// QRコード用画像圧縮（同期版・簡易圧縮）
-function compressImageForQR(imageData) {
-    if (!imageData) return null;
-    
+// QR生成直前の容量確保（スマート削除）
+function ensureStorageSpaceForQR(newData) {
     try {
-        // Base64データURL形式かチェック
-        if (imageData.startsWith('data:image/')) {
-            // データサイズを確認
-            const sizeKB = Math.round(imageData.length * 0.75 / 1024); // Base64の約75%が実データ
+        // 新しいデータのサイズを推定
+        const newDataSize = JSON.stringify(newData).length;
+        const currentUsage = getCurrentStorageUsage();
+        const estimatedTotal = currentUsage + newDataSize;
+        
+        console.log(`📊 容量確認: 現在${Math.round(currentUsage/1024)}KB + 新規${Math.round(newDataSize/1024)}KB = 推定${Math.round(estimatedTotal/1024)}KB`);
+        
+        // 8MB制限を超える場合のみ古いデータを削除
+        if (estimatedTotal > 8 * 1024 * 1024) {
+            console.log('🚨 容量不足が予想されるため、古いデータを削除します');
             
-            if (sizeKB < 50) {
-                // 50KB未満はそのまま使用
-                return imageData;
-            } else if (sizeKB < 200) {
-                // 200KB未満は軽い圧縮
-                return imageData.replace(/data:image\/[^;]+;base64,/, 'data:image/jpeg;base64,');
-            } else {
-                // 200KB以上は大幅圧縮（先頭1000文字 + 終端500文字で代用）
-                const header = imageData.substring(0, 1000);
-                const footer = imageData.substring(imageData.length - 500);
-                const compressed = header + '...[compressed]...' + footer;
-                console.log(`大きな画像を圧縮: ${sizeKB}KB → ${Math.round(compressed.length * 0.75 / 1024)}KB`);
-                return compressed;
+            // 古いテストコードを取得
+            const testCodes = Object.keys(localStorage)
+                .filter(key => key.startsWith('testCode_'))
+                .map(key => {
+                    const testCode = key.replace('testCode_', '');
+                    const data = localStorage.getItem(key);
+                    let created = null;
+                    try {
+                        const parsed = JSON.parse(data);
+                        created = new Date(parsed.created);
+                    } catch (e) {
+                        created = new Date(0); // 無効なデータは古い扱い
+                    }
+                    return { key, testCode, created, size: data.length };
+                })
+                .sort((a, b) => a.created - b.created); // 古い順にソート
+            
+            // 容量が十分になるまで古いデータを削除
+            let freedSpace = 0;
+            for (const codeData of testCodes) {
+                if (estimatedTotal - freedSpace <= 7 * 1024 * 1024) {
+                    break; // 7MB以下になったら停止
+                }
+                
+                localStorage.removeItem(codeData.key);
+                freedSpace += codeData.size;
+                console.log(`🗑️ 古いテストコード削除: ${codeData.testCode} (${Math.round(codeData.size/1024)}KB解放)`);
             }
+            
+            console.log(`✅ 容量確保完了: ${Math.round(freedSpace/1024)}KB解放`);
         } else {
-            // データURL形式でない場合はそのまま
-            return imageData;
+            console.log('✅ 容量に問題なし、削除不要');
         }
     } catch (error) {
-        console.warn('Image compression failed, using original:', error);
-        return imageData;
+        console.warn('容量確保処理でエラー:', error);
     }
+}
+
+// 現在のストレージ使用量を取得
+function getCurrentStorageUsage() {
+    let totalSize = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+        totalSize += key.length + value.length;
+    }
+    return totalSize;
 }
 
 // 既存のテストコードをチェック
