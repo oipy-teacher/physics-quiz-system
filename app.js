@@ -66,19 +66,33 @@ function initFirebase() {
         }
         
         if (typeof firebase !== 'undefined') {
+            console.log('🔥 Firebase初期化を開始...');
             firebaseApp = firebase.initializeApp(firebaseConfig);
             firebaseStorage = firebase.storage();
             // 🔥 Firestore データベースを初期化
             db = firebase.firestore();
-            isFirebaseAvailable = true;
-            console.log('🔥 Firebase & Firestore initialized successfully');
+            
+            // Firebase設定をテスト
+            db.enableNetwork().then(() => {
+                isFirebaseAvailable = true;
+                console.log('🔥 Firebase & Firestore initialized successfully');
+            }).catch((error) => {
+                console.warn('Firebase network connection failed:', error);
+                console.log('⚠️ Firebase接続エラーのため、ローカル動作モードに切り替えます');
+                isFirebaseAvailable = false;
+                db = null;
+            });
         } else {
             console.warn('Firebase SDK not loaded');
             isFirebaseAvailable = false;
         }
     } catch (error) {
         console.warn('Firebase initialization failed:', error);
+        console.log('⚠️ Firebase初期化エラーのため、ローカル動作モードに切り替えます');
         isFirebaseAvailable = false;
+        db = null;
+        firebaseApp = null;
+        firebaseStorage = null;
     }
 }
 
@@ -797,19 +811,20 @@ async function saveQuestions() {
     }
 
     // Firebase初期化を待つ
-    if (!db) {
+    if (!db && isFirebaseAvailable !== false) {
         console.log('🔥 Firebase初期化待ち...');
         // 最大3秒待機
         for (let i = 0; i < 30; i++) {
             await new Promise(resolve => setTimeout(resolve, 100));
-            if (db) {
-                console.log('✅ Firebase初期化完了');
+            if (db || isFirebaseAvailable === false) {
                 break;
             }
         }
     }
     
-    if (!db) {
+    if (db && isFirebaseAvailable !== false) {
+        console.log('✅ Firebase初期化完了');
+    } else {
         console.log('⚠️ Firebase未設定のため、ローカル動作モードで継続します');
         // Firebase未設定でもローカル動作を継続
     }
@@ -830,7 +845,7 @@ async function saveQuestions() {
     let cloudSaved = false;
     
     // Firebase保存を試行（未設定の場合はスキップ）
-    if (db) {
+    if (db && isFirebaseAvailable !== false) {
         try {
             console.log('🔥 Firebase保存を試行中...');
             await db.collection('testCodes').doc(testCode).set({
@@ -844,6 +859,9 @@ async function saveQuestions() {
             cloudSaved = true;
         } catch (error) {
             console.warn('⚠️ Firebase保存に失敗、ローカル動作します:', error);
+            // Firebase接続エラーが発生した場合、以降はローカル動作にする
+            isFirebaseAvailable = false;
+            db = null;
             cloudSaved = false;
         }
     } else {
