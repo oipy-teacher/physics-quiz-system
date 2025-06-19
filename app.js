@@ -833,8 +833,23 @@ async function generateShareUrl(data) {
             testCode: testCode
         });
         
-        // Base64エンコードしてURLパラメータとして使用
-        const encodedData = btoa(encodeURIComponent(dataString));
+        // データを軽量化してからBase64エンコード
+        const lightweightData = {
+            questions: data.questions.map(q => ({
+                // 画像データを圧縮（Base64の冗長部分を削除）
+                imageData: q.imageData ? q.imageData.replace(/^data:image\/[^;]+;base64,/, '') : q.imageData,
+                number: q.number
+            })),
+            answerExamples: data.answerExamples ? data.answerExamples.map(ex => ({
+                imageData: ex.imageData ? ex.imageData.replace(/^data:image\/[^;]+;base64,/, '') : ex.imageData,
+                description: ex.description
+            })) : [],
+            testEnabled: true,
+            testCode: testCode,
+            created: new Date().toISOString()
+        };
+        
+        const encodedData = btoa(encodeURIComponent(JSON.stringify(lightweightData)));
         
         // QRコードとURLに埋め込むため、データサイズを確認
         const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
@@ -1361,14 +1376,20 @@ function generateQRCode(testCode) {
             } else if (parsedData.questions && parsedData.questions.length > 0) {
                 // 完全データがある場合でも軽量版を試行
                 console.log('Checking if data can be embedded in QR...');
-                const dataToEmbed = {
-                    questions: parsedData.questions,
-                    answerExamples: parsedData.answerExamples || [],
+                const lightweightData = {
+                    questions: parsedData.questions.map(q => ({
+                        imageData: q.imageData ? q.imageData.replace(/^data:image\/[^;]+;base64,/, '') : q.imageData,
+                        number: q.number
+                    })),
+                    answerExamples: (parsedData.answerExamples || []).map(ex => ({
+                        imageData: ex.imageData ? ex.imageData.replace(/^data:image\/[^;]+;base64,/, '') : ex.imageData,
+                        description: ex.description
+                    })),
                     testEnabled: true,
                     testCode: testCode,
                     created: parsedData.created
                 };
-                const encodedData = btoa(encodeURIComponent(JSON.stringify(dataToEmbed)));
+                const encodedData = btoa(encodeURIComponent(JSON.stringify(lightweightData)));
                 const dataUrl = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
                 
                 if (dataUrl.length < 2000) {
@@ -1604,6 +1625,23 @@ function loadQuestionsFromUrl() {
             try {
                 const decodedData = decodeURIComponent(atob(dataParam));
                 data = JSON.parse(decodedData);
+                
+                // 軽量化されたデータを復元
+                if (data.questions) {
+                    data.questions = data.questions.map(q => ({
+                        ...q,
+                        // Base64ヘッダーを復元
+                        imageData: q.imageData ? `data:image/jpeg;base64,${q.imageData}` : q.imageData
+                    }));
+                }
+                if (data.answerExamples) {
+                    data.answerExamples = data.answerExamples.map(ex => ({
+                        ...ex,
+                        // Base64ヘッダーを復元
+                        imageData: ex.imageData ? `data:image/jpeg;base64,${ex.imageData}` : ex.imageData
+                    }));
+                }
+                
                 console.log('Data loaded from URL parameter (cross-device):', data);
             } catch (decodeError) {
                 console.error('Failed to decode URL data:', decodeError);
