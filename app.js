@@ -1449,11 +1449,8 @@ function generateQRCode(testCode) {
             urlType = 'code';
             console.log('Using test code URL (short and clean)');
             
-            // 🚀 クロスデバイス対応のためFirebaseにデータを保存
-            if (parsedData.questions && parsedData.questions.length > 0) {
-                console.log('☁️ Firebaseにテストデータを保存中:', testCode);
-                saveTestDataToFirebase(testCode, parsedData);
-            }
+            // 教員側はFirebase保存しない（ローカルのみ）
+            console.log('📚 教員側: QRコード生成（ローカルデータ使用）');
         } catch (e) {
             console.error('Error parsing test data:', e);
             // エラーの場合はテストコード方式
@@ -1814,6 +1811,12 @@ async function loadQuestionsFromUrl() {
                 if (testData) {
                     data = JSON.parse(testData);
                     console.log('Data loaded from localStorage (same device):', data);
+                    
+                    // 生徒アクセス時に初めてFirebaseに保存（クロスデバイス対応）
+                    if (isFirebaseAvailable && db && data.questions && data.questions.length > 0) {
+                        console.log('🚀 生徒アクセス検出: Firebaseに初回保存中...');
+                        saveTestDataToFirebase(testCode, data);
+                    }
                 } else {
                     // ローカルストレージにもない場合
                     console.warn('Test code not found in both Firebase and localStorage:', testCode);
