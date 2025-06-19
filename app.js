@@ -639,6 +639,23 @@ function renderAnswerExampleList() {
 function removeAnswerExample(index) {
     if (confirm('この解答例を削除しますか？')) {
         answerExamples.splice(index, 1);
+        
+        // ローカルストレージも更新
+        localStorage.setItem('physicsQuizAnswerExamples', JSON.stringify(answerExamples));
+        
+        // 統合データも更新
+        try {
+            const savedData = localStorage.getItem('physicsQuizData');
+            if (savedData) {
+                const data = JSON.parse(savedData);
+                data.answerExamples = answerExamples;
+                data.lastUpdated = new Date().toISOString();
+                localStorage.setItem('physicsQuizData', JSON.stringify(data));
+            }
+        } catch (error) {
+            console.warn('Failed to update integrated data:', error);
+        }
+        
         renderAnswerExampleList();
         showAdminSuccess('解答例を削除しました。');
     }
@@ -679,6 +696,23 @@ function removeQuestion(index) {
             q.number = i + 1;
             q.id = `q${i + 1}`;
         });
+        
+        // ローカルストレージも更新
+        localStorage.setItem('physicsQuizQuestions', JSON.stringify(questions));
+        
+        // 統合データも更新
+        try {
+            const savedData = localStorage.getItem('physicsQuizData');
+            if (savedData) {
+                const data = JSON.parse(savedData);
+                data.questions = questions;
+                data.lastUpdated = new Date().toISOString();
+                localStorage.setItem('physicsQuizData', JSON.stringify(data));
+            }
+        } catch (error) {
+            console.warn('Failed to update integrated data:', error);
+        }
+        
         renderQuestionList();
         updateTestStatus();
         showAdminSuccess('問題を削除しました。');
